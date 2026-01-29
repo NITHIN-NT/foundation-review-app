@@ -130,15 +130,17 @@ STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 AUTH_USER_MODEL = 'users.User'
 
+# Domain Configuration from Environment
+backend_domain = os.getenv('BACKEND_DOMAIN', 'foundation-review-app.onrender.com')
+frontend_domains = [d.strip() for d in os.getenv('FRONTEND_DOMAIN', 'foundation-review-app.vercel.app').split(',')]
+
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
-    f"https://{os.getenv('FRONTEND_DOMAIN', 'foundation-review-app.vercel.app')}",
-]
+] + [f"https://{domain}" for domain in frontend_domains]
 
 CSRF_TRUSTED_ORIGINS = [
-    f"https://{os.getenv('BACKEND_DOMAIN', 'foundation-review-app.onrender.com')}",
-    f"https://{os.getenv('FRONTEND_DOMAIN', 'foundation-review-app.vercel.app')}",
-]
+    f"https://{backend_domain}",
+] + [f"https://{domain}" for domain in frontend_domains]
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
