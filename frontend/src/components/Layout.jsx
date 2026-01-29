@@ -26,9 +26,10 @@ const Layout = () => {
                 zIndex: 100
             }}>
                 <div className="container flex items-center justify-between" style={{ padding: '1rem 2rem' }}>
-                    <Link to="/" style={{ textDecoration: 'none', color: 'inherit' }}>
-                        <span style={{ fontWeight: 700, fontSize: '1.125rem', letterSpacing: '-0.02em' }}>
-                            reviewer<span style={{ opacity: 0.4 }}>.app</span>
+                    <Link to="/" className="flex items-center gap-2" style={{ textDecoration: 'none', color: 'inherit' }}>
+                        <img src="/logo.png" alt="Foundation Logo" style={{ height: '24px', width: 'auto' }} />
+                        <span style={{ fontWeight: 700, fontSize: '1.25rem', letterSpacing: '-0.02em' }}>
+                            Foundation
                         </span>
                     </Link>
 
