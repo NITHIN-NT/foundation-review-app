@@ -19,6 +19,7 @@ DEBUG = True
 
 ALLOWED_HOSTS = [
     os.getenv('BACKEND_DOMAIN', 'foundation-review-app.onrender.com'),
+    'foundation-review-app.onrender.com',
     'localhost',
     '127.0.0.1',
 ]
