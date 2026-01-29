@@ -108,6 +108,30 @@ DEBUG=True
 ALLOWED_HOSTS=localhost,127.0.0.1
 ```
 
+## Deployment
+
+Ready to deploy your application? **100% FREE hosting available!** 🎉
+
+### 🆓 Free Hosting (Recommended for Personal Projects)
+👉 **[FREE_HOSTING_GUIDE.md](./FREE_HOSTING_GUIDE.md)** - Deploy free using Vercel + Render + Supabase
+
+**No credit card required. Free forever.**
+- ✅ Free frontend on Vercel (100GB bandwidth/month)
+- ✅ Free backend on Render (spins down after 15 min inactivity)
+- ✅ Free PostgreSQL on Supabase (500MB)
+
+### 📚 Additional Guides
+- **[VERCEL_DEPLOYMENT_GUIDE.md](./VERCEL_DEPLOYMENT_GUIDE.md)** - Comprehensive deployment guide with all options
+- **[FREE_HOSTING_QUICK_REF.md](./FREE_HOSTING_QUICK_REF.md)** - Quick reference with visual diagram
+
+### What's Included
+All configuration files are ready:
+- ✅ `frontend/vercel.json` - Vercel configuration
+- ✅ `backend/Procfile` - Render configuration
+- ✅ `backend/requirements.txt` - Python dependencies with production packages
+- ✅ `backend/runtime.txt` - Python version
+- ✅ `.env.example` files for both frontend and backend
+
 ## License
 
 MIT License
