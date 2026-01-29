@@ -140,6 +140,7 @@ AUTH_USER_MODEL = 'users.User'
 
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
+    "https://foundation-review-app.vercel.app",
 ]
 
 REST_FRAMEWORK = {
