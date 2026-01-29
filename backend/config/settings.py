@@ -18,8 +18,7 @@ SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-o_6=1w_!&n7xd#oxhak6a=_oj5
 DEBUG = True
 
 ALLOWED_HOSTS = [
-    'foundation-review-app.onrender.com',
-    'foundation-review-app.vercel.app',
+    os.getenv('BACKEND_DOMAIN', 'foundation-review-app.onrender.com'),
     'localhost',
     '127.0.0.1',
 ]
@@ -133,12 +132,12 @@ AUTH_USER_MODEL = 'users.User'
 
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
-    "https://foundation-review-app.vercel.app",
+    f"https://{os.getenv('FRONTEND_DOMAIN', 'foundation-review-app.vercel.app')}",
 ]
 
 CSRF_TRUSTED_ORIGINS = [
-    "https://foundation-review-app.onrender.com",
-    "https://foundation-review-app.vercel.app",
+    f"https://{os.getenv('BACKEND_DOMAIN', 'foundation-review-app.onrender.com')}",
+    f"https://{os.getenv('FRONTEND_DOMAIN', 'foundation-review-app.vercel.app')}",
 ]
 
 REST_FRAMEWORK = {
