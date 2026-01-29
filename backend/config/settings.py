@@ -19,6 +19,7 @@ DEBUG = True
 
 ALLOWED_HOSTS = [
     'foundation-review-app.onrender.com',
+    'foundation-review-app.vercel.app',
     'localhost',
     '127.0.0.1',
 ]
