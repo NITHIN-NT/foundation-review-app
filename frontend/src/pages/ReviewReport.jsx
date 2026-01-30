@@ -204,7 +204,7 @@ const ReviewReport = () => {
                         <div className="text-sm font-semibold uppercase tracking-wider text-muted">{session.module_name} Assessment Scores</div>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             {Object.entries(session.scorecard_data).map(([cat, score]) => (
-                                <div key={cat} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                                <div key={cat} className="flex items-center justify-between p-3 rounded-lg" style={{ background: 'var(--hover)' }}>
                                     <div className="flex flex-col">
                                         <span className="text-sm font-medium">{cat}</span>
                                         {cat === "Theory" && session.module_name !== 'M4' && (
@@ -268,7 +268,7 @@ const ReviewReport = () => {
                     </div>
 
                     {/* Visual Bar */}
-                    <div style={{ height: '8px', width: '100%', background: 'var(--gray-100)', borderRadius: '4px', overflow: 'hidden', display: 'flex' }}>
+                    <div style={{ height: '8px', width: '100%', background: 'var(--border)', borderRadius: '4px', overflow: 'hidden', display: 'flex' }}>
                         <div style={{ width: `${(stats.answered / stats.total) * 100}%`, background: 'var(--success)' }} />
                         <div style={{ width: `${(stats.improvement / stats.total) * 100}%`, background: 'var(--warning)' }} />
                         <div style={{ width: `${(stats.wrong / stats.total) * 100}%`, background: 'var(--danger)' }} />

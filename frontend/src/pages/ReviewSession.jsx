@@ -142,7 +142,7 @@ const ReviewSession = () => {
         }, 1000);
 
         return () => clearInterval(interval);
-    }, [isTimerPaused, id, elapsedTime]);
+    }, [isTimerPaused, id]); // Removed elapsedTime from dependencies
 
     /**
      * Formats seconds into MM:SS format
@@ -349,7 +349,7 @@ const ReviewSession = () => {
                         position: 'fixed',
                         right: '0',
                         top: '100px',
-                        background: 'white',
+                        background: 'var(--surface)',
                         boxShadow: '-4px 0 20px rgba(0,0,0,0.08)',
                         zIndex: 1000,
                         height: 'fit-content',
@@ -357,7 +357,7 @@ const ReviewSession = () => {
                         borderRadius: '12px 0 0 12px',
                         overflow: 'hidden',
                         display: 'flex',
-                        border: '1px solid var(--gray-200)'
+                        border: '1px solid var(--border)'
                     }}
                     role="complementary"
                     aria-label="Scorecard"
@@ -373,7 +373,7 @@ const ReviewSession = () => {
                             alignItems: 'center',
                             padding: '1rem 0',
                             cursor: 'pointer',
-                            background: isScorecardOpen ? 'var(--gray-50)' : 'white'
+                            background: isScorecardOpen ? 'var(--hover)' : 'var(--surface)'
                         }}
                         role="button"
                         tabIndex={0}
@@ -393,7 +393,7 @@ const ReviewSession = () => {
                                 letterSpacing: '1px',
                                 textTransform: 'uppercase',
                                 fontSize: '0.65rem',
-                                color: 'var(--gray-500)',
+                                color: 'var(--text-muted)',
                                 display: 'flex',
                                 alignItems: 'center',
                                 gap: '0.5rem'
@@ -416,8 +416,8 @@ const ReviewSession = () => {
                                     {categories.map((cat, idx) => {
                                         const isAutoTheory = !isM4 && cat === "Theory";
                                         return (
-                                            <div key={cat} style={{ background: 'var(--gray-50)', padding: '0.75rem', borderRadius: '10px', border: '1px solid var(--gray-100)' }}>
-                                                <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--gray-600)', marginBottom: '0.25rem' }}>
+                                            <div key={cat} style={{ background: 'var(--hover)', padding: '0.75rem', borderRadius: '10px', border: '1px solid var(--border)' }}>
+                                                <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
                                                     {isM4 ? `${idx + 1}. ` : ""}{cat}
                                                 </div>
                                                 <div className="flex items-center gap-2">
@@ -435,9 +435,10 @@ const ReviewSession = () => {
                                                             height: '32px',
                                                             padding: '0 0.5rem',
                                                             borderRadius: '6px',
-                                                            border: '1px solid var(--gray-300)',
+                                                            border: '1px solid var(--border)',
                                                             fontSize: '0.875rem',
-                                                            background: isAutoTheory ? 'var(--gray-100)' : 'white'
+                                                            background: isAutoTheory ? 'var(--bg)' : 'var(--surface)',
+                                                            color: 'var(--text)'
                                                         }}
                                                         aria-label={`Score for ${cat}`}
                                                     />
@@ -467,7 +468,7 @@ const ReviewSession = () => {
                         {/* Timer */}
                         <div className="flex items-center gap-2" style={{
                             padding: '0.5rem 1rem',
-                            background: 'var(--gray-100)',
+                            background: 'var(--hover)',
                             borderRadius: '8px'
                         }}>
                             <button
@@ -534,7 +535,7 @@ const ReviewSession = () => {
                     </div>
                     <div style={{
                         height: '4px',
-                        background: 'var(--gray-200)',
+                        background: 'var(--border)',
                         borderRadius: '2px',
                         overflow: 'hidden'
                     }}>
@@ -597,7 +598,7 @@ const ReviewSession = () => {
                                                 className="btn btn-ghost w-full"
                                                 style={{
                                                     border: '1px dashed var(--gray-300)',
-                                                    color: 'var(--gray-500)',
+                                                    color: 'var(--text-muted)',
                                                     fontSize: '0.875rem'
                                                 }}
                                             >
@@ -606,11 +607,11 @@ const ReviewSession = () => {
                                         ) : (
                                             <div style={{
                                                 padding: '1rem',
-                                                background: 'var(--gray-50)',
+                                                background: 'var(--hover)',
                                                 borderRadius: '8px',
                                                 borderLeft: '4px solid var(--success)',
                                                 fontSize: '0.95rem',
-                                                color: 'var(--gray-700)',
+                                                color: 'var(--text)',
                                                 position: 'relative'
                                             }}>
                                                 <button
@@ -687,7 +688,7 @@ const ReviewSession = () => {
                                             status === 'NOT_ANSWERED' ? 'var(--danger)' :
                                                 status === 'IMPROVEMENT' ? 'var(--warning)' :
                                                     status === 'SKIPPED' ? 'var(--gray-500)' :
-                                                        'var(--gray-300)',
+                                                        'var(--border)',
                                         cursor: 'pointer',
                                         padding: 0
                                     }}
@@ -739,13 +740,14 @@ const ReviewSession = () => {
                                     }
                                 }}
                                 style={{
-                                    background: 'linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%)',
+                                    background: 'var(--surface)',
                                     borderRadius: '16px',
                                     padding: '2rem',
                                     width: '100%',
                                     maxWidth: '500px',
                                     boxShadow: '0 20px 40px rgba(0,0,0,0.4)',
-                                    color: 'var(--gray-900)'
+                                    color: 'var(--text)',
+                                    border: '1px solid var(--border)'
                                 }}
                             >
                                 <h2 id="add-question-title" style={{ marginBottom: '1.5rem', fontSize: '1.25rem' }}>Add New Question</h2>
@@ -753,7 +755,7 @@ const ReviewSession = () => {
                                     <div style={{ marginBottom: '1rem' }}>
                                         <label
                                             htmlFor="question-text"
-                                            style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', fontWeight: 600, color: 'var(--gray-700)' }}
+                                            style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-muted)' }}
                                         >
                                             Question Text *
                                         </label>
@@ -769,9 +771,11 @@ const ReviewSession = () => {
                                                 width: '100%',
                                                 padding: '1rem',
                                                 borderRadius: '10px',
-                                                border: '1px solid var(--gray-300)',
+                                                border: '1px solid var(--border)',
                                                 minHeight: '100px',
                                                 fontSize: '1rem',
+                                                background: 'var(--bg)',
+                                                color: 'var(--text)',
                                                 fontFamily: 'inherit',
                                                 resize: 'vertical',
                                                 opacity: isAddingQuestion ? 0.6 : 1
@@ -782,7 +786,7 @@ const ReviewSession = () => {
                                     <div style={{ marginBottom: '1.5rem' }}>
                                         <label
                                             htmlFor="question-answer"
-                                            style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', fontWeight: 600, color: 'var(--gray-700)' }}
+                                            style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-muted)' }}
                                         >
                                             Suggested Answer (Optional)
                                         </label>
@@ -796,8 +800,10 @@ const ReviewSession = () => {
                                                 width: '100%',
                                                 padding: '1rem',
                                                 borderRadius: '10px',
-                                                border: '1px solid var(--gray-300)',
+                                                border: '1px solid var(--border)',
                                                 minHeight: '80px',
+                                                background: 'var(--bg)',
+                                                color: 'var(--text)',
                                                 fontSize: '1rem',
                                                 fontFamily: 'inherit',
                                                 resize: 'vertical',
