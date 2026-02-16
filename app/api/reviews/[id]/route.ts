@@ -55,10 +55,13 @@ export async function PATCH(
         const [updatedReview] = await sql`
       UPDATE reviews
       SET 
-        status = ${validatedData.status},
-        scores = ${JSON.stringify(validatedData.scores)},
-        notes = ${validatedData.notes || null},
-        session_data = ${JSON.stringify(validatedData.session_data || {})},
+        status = COALESCE(${validatedData.status || null}, status),
+        student_name = COALESCE(${validatedData.student_name || null}, student_name),
+        batch = COALESCE(${validatedData.batch || null}, batch),
+        module = COALESCE(${validatedData.module || null}, module),
+        scores = COALESCE(${validatedData.scores ? JSON.stringify(validatedData.scores) : null}::jsonb, scores),
+        notes = COALESCE(${validatedData.notes || null}, notes),
+        session_data = COALESCE(${validatedData.session_data ? JSON.stringify(validatedData.session_data) : null}::jsonb, session_data),
         updated_at = NOW()
       WHERE id = ${Number(id)}
       RETURNING 
@@ -82,6 +85,33 @@ export async function PATCH(
         if (error instanceof ZodError) {
             return NextResponse.json({ error: 'Validation Error', details: error.issues }, { status: 400 });
         }
+        console.error('Database Error:', error);
+        return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+    }
+}
+
+export async function DELETE(
+    request: Request,
+    { params }: { params: Promise<{ id: string }> }
+) {
+    const { id } = await params;
+    if (isNaN(Number(id))) {
+        return NextResponse.json({ error: 'Invalid ID format' }, { status: 400 });
+    }
+
+    try {
+        const result = await sql`
+      DELETE FROM reviews
+      WHERE id = ${Number(id)}
+      RETURNING id
+    `;
+
+        if (result.length === 0) {
+            return NextResponse.json({ error: 'Review not found' }, { status: 404 });
+        }
+
+        return NextResponse.json({ message: 'Review deleted successfully' });
+    } catch (error) {
         console.error('Database Error:', error);
         return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
     }
