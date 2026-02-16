@@ -9,7 +9,7 @@ import {
     Settings,
     ChevronLeft,
     Terminal,
-    Users,
+    ClipboardList,
     LogOut,
     HelpCircle
 } from 'lucide-react';
@@ -23,7 +23,7 @@ const Sidebar = () => {
     const navItems = [
         { icon: LayoutDashboard, label: 'Dashboard', href: '/' },
         { icon: BookOpen, label: 'Reviews', href: '/reviews' },
-        { icon: Users, label: 'Students', href: '/students' },
+        { icon: ClipboardList, label: 'Question Pool', href: '/questions' },
         { icon: Terminal, label: 'Playground', href: '/playground' },
     ];
 

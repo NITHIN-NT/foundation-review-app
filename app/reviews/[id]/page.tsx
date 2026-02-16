@@ -7,7 +7,6 @@ import {
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import type { ScheduledReview, Question, ReviewStatus, QuestionResult } from '@/types';
-import questionsData from '@/data/questions.json';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 import { fetchReviews, createReview, updateReview, API_URL } from '@/lib/api';
@@ -19,20 +18,35 @@ export default function ReviewPage({ params }: { params: Promise<{ id: string }>
     const router = useRouter();
     const { id } = use(params);
     const [review, setReview] = useState<ScheduledReview | null>(null);
+    const [questions, setQuestions] = useState<Question[]>([]);
     const [isLoading, setIsLoading] = useState(true);
 
-    // Load review data
+    // Load review and questions
     useEffect(() => {
-        fetch(`${API_URL}/reviews/${id}`)
-            .then(res => res.json())
-            .then(data => {
-                setReview(data);
-                setIsLoading(false);
-            })
-            .catch(() => {
+        const loadPageData = async () => {
+            try {
+                const reviewRes = await fetch(`${API_URL}/reviews/${id}`);
+                const reviewData = await reviewRes.json();
+
+                if (!reviewRes.ok) throw new Error();
+                setReview(reviewData);
+
+                const moduleId = reviewData.module.split(' ')[1];
+                const questionsRes = await fetch(`/api/questions?moduleId=${moduleId}`);
+                const questionsData = await questionsRes.json();
+
+                if (questionsRes.ok) {
+                    setQuestions(questionsData);
+                }
+            } catch (error) {
                 toast.error('Failed to load assessment data');
                 router.push('/');
-            });
+            } finally {
+                setIsLoading(false);
+            }
+        };
+
+        loadPageData();
     }, [id, router]);
 
     if (isLoading || !review) {
@@ -43,23 +57,23 @@ export default function ReviewPage({ params }: { params: Promise<{ id: string }>
         );
     }
 
-    return <ReviewSessionView review={review} onCancel={() => router.push('/')} onComplete={() => router.push('/')} />;
+    return <ReviewSessionView
+        review={review}
+        questions={questions}
+        onCancel={() => router.push('/')}
+        onComplete={() => router.push('/')}
+    />;
 }
 
 interface Props {
     review: ScheduledReview;
+    questions: Question[];
     onCancel: () => void;
     onComplete: () => void;
 }
 
-const ReviewSessionView: React.FC<Props> = ({ review, onCancel, onComplete }) => {
-    const moduleIdStr = review.module.split(' ')[1];
-    const moduleId = parseInt(moduleIdStr);
-
-    const moduleQuestions = (questionsData as Question[]).filter(q =>
-        q.module_id === moduleId ||
-        q.module_id === moduleIdStr as any
-    );
+const ReviewSessionView: React.FC<Props> = ({ review, questions, onCancel, onComplete }) => {
+    const moduleQuestions = questions;
 
     const getSaved = (key: string, def: any) => {
         try {
