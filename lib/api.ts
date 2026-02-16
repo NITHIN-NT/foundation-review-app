@@ -49,3 +49,17 @@ export async function updateReview(id: string | number, data: UpdateReviewReques
         throw error;
     }
 }
+export async function deleteReview(id: string | number): Promise<void> {
+    try {
+        const res = await fetch(`${API_URL}/reviews/${id}`, {
+            method: 'DELETE',
+        });
+        if (!res.ok) {
+            const error = await res.json().catch(() => ({ message: 'An unexpected error occurred' }));
+            throw new Error(error.message || error.error || 'Request failed');
+        }
+    } catch (error) {
+        console.error('API Delete Error:', error);
+        throw error;
+    }
+}

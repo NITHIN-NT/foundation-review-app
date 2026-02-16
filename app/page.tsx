@@ -10,11 +10,13 @@ import {
   SlidersHorizontal,
   MoreVertical,
   Clock,
-  Loader2
+  Loader2,
+  Edit,
+  Trash2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
-import { fetchReviews, createReview } from '@/lib/api';
+import { fetchReviews, createReview, deleteReview, updateReview } from '@/lib/api';
 import type { ScheduledReview } from '@/types';
 import { useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
@@ -26,6 +28,8 @@ export default function Dashboard() {
   const [searchTerm, setSearchTerm] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [activeMenu, setActiveMenu] = useState<string | number | null>(null);
+  const [isEditing, setIsEditing] = useState<string | number | null>(null);
   const [formData, setFormData] = useState({
     studentName: '',
     module: 'Module 1',
@@ -52,25 +56,58 @@ export default function Dashboard() {
     e.preventDefault();
     setIsSubmitting(true);
 
-    const newReview: any = {
+    const reviewData: any = {
       student_name: formData.studentName,
       batch: formData.batch,
       module: formData.module,
-      status: 'pending',
-      scheduled_at: new Date().toISOString(),
     };
 
+    if (!isEditing) {
+      reviewData.status = 'pending';
+      reviewData.scheduled_at = new Date().toISOString();
+    }
+
     try {
-      const savedReview = await createReview(newReview);
-      setReviews(prev => [savedReview, ...prev]);
+      if (isEditing) {
+        const updated = await updateReview(isEditing, reviewData);
+        setReviews(prev => prev.map(r => r.id === isEditing ? updated : r));
+        toast.success('Assessment updated successfully');
+      } else {
+        const savedReview = await createReview(reviewData);
+        setReviews(prev => [savedReview, ...prev]);
+        toast.success('Assessment scheduled successfully');
+      }
       setShowForm(false);
+      setIsEditing(null);
       setFormData({ studentName: '', batch: '', module: 'Module 1' });
-      toast.success('Assessment scheduled successfully');
     } catch (err: any) {
       toast.error(err.message || 'Validation failed. Please check your inputs.');
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const handleDeleteReview = async (id: string | number) => {
+    if (!window.confirm('Are you sure you want to delete this assessment?')) return;
+
+    try {
+      await deleteReview(id);
+      setReviews(prev => prev.filter(r => r.id !== id));
+      toast.success('Assessment deleted successfully');
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to delete assessment');
+    }
+  };
+
+  const openEditModal = (review: ScheduledReview) => {
+    setIsEditing(review.id);
+    setFormData({
+      studentName: review.studentName || '',
+      module: review.module || 'Module 1',
+      batch: review.batch || '',
+    });
+    setShowForm(true);
+    setActiveMenu(null);
   };
 
   const filteredReviews = reviews.filter(r =>
@@ -176,9 +213,53 @@ export default function Dashboard() {
                       <p className="text-xs text-text-tertiary font-bold uppercase tracking-wider">{review.batch}</p>
                     </div>
                   </div>
-                  <button className="btn-icon">
-                    <MoreVertical size={18} />
-                  </button>
+                  <div className="relative">
+                    <button
+                      className={cn(
+                        "btn-icon transition-all shrink-0",
+                        activeMenu === review.id ? "bg-bg-subtle text-primary" : ""
+                      )}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setActiveMenu(activeMenu === review.id ? null : review.id);
+                      }}
+                    >
+                      <MoreVertical size={18} />
+                    </button>
+
+                    <AnimatePresence>
+                      {activeMenu === review.id && (
+                        <>
+                          <div
+                            className="fixed inset-0 z-10"
+                            onClick={() => setActiveMenu(null)}
+                          />
+                          <motion.div
+                            initial={{ opacity: 0, scale: 0.95, y: -10 }}
+                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.95, y: -10 }}
+                            className="absolute right-0 mt-2 w-48 bg-bg-white border border-border-base rounded-2xl shadow-2xl z-20 overflow-hidden py-1.5"
+                          >
+                            <button
+                              onClick={() => openEditModal(review)}
+                              className="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-bold text-text-secondary hover:bg-bg-subtle hover:text-primary transition-colors text-left"
+                            >
+                              <Edit size={16} />
+                              Edit Properties
+                            </button>
+                            <div className="h-px bg-border-subtle mx-2 my-1" />
+                            <button
+                              onClick={() => handleDeleteReview(review.id)}
+                              className="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-bold text-red-500 hover:bg-red-50 transition-colors text-left"
+                            >
+                              <Trash2 size={16} />
+                              Delete Record
+                            </button>
+                          </motion.div>
+                        </>
+                      )}
+                    </AnimatePresence>
+                  </div>
                 </div>
 
                 <div className="space-y-3 py-4 border-y border-border-subtle my-2">
@@ -225,7 +306,13 @@ export default function Dashboard() {
       {/* Schedule Modal */}
       <AnimatePresence>
         {showForm && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-slate-900/80 backdrop-blur-md" onClick={() => !isSubmitting && setShowForm(false)}>
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-slate-900/80 backdrop-blur-md" onClick={() => {
+            if (!isSubmitting) {
+              setShowForm(false);
+              setIsEditing(null);
+              setFormData({ studentName: '', batch: '', module: 'Module 1' });
+            }
+          }}>
             <motion.div
               initial={{ scale: 0.9, opacity: 0, y: 20 }}
               animate={{ scale: 1, opacity: 1, y: 0 }}
@@ -234,8 +321,8 @@ export default function Dashboard() {
               onClick={e => e.stopPropagation()}
             >
               <div className="p-8 bg-bg-subtle border-b border-border-base">
-                <h3 className="text-xl font-black text-text-primary">Schedule Session</h3>
-                <p className="text-text-secondary text-sm mt-1">Register a new student for assessment.</p>
+                <h3 className="text-xl font-black text-text-primary">{isEditing ? 'Update Session' : 'Schedule Session'}</h3>
+                <p className="text-text-secondary text-sm mt-1">{isEditing ? 'Modify student assessment details.' : 'Register a new student for assessment.'}</p>
               </div>
               <div className="p-8">
                 <form onSubmit={handleCreateReview} className="space-y-6">
@@ -283,9 +370,9 @@ export default function Dashboard() {
                     {isSubmitting ? (
                       <>
                         <Loader2 className="animate-spin" size={20} />
-                        Deploying Session...
+                        {isEditing ? 'Updating Record...' : 'Deploying Session...'}
                       </>
-                    ) : 'Register & Schedule'}
+                    ) : (isEditing ? 'Save Changes' : 'Register & Schedule')}
                   </button>
                 </form>
               </div>
