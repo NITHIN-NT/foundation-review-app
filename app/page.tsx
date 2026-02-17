@@ -12,16 +12,24 @@ import {
   Clock,
   Loader2,
   Edit,
-  Trash2
+  Trash2,
+  Terminal,
+  LayoutDashboard,
+  CheckCircle,
+  ExternalLink
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 import { fetchReviews, createReview, deleteReview, updateReview } from '@/lib/api';
 import type { ScheduledReview } from '@/types';
 import { useRouter } from 'next/navigation';
+import { useAuth } from '@/components/AuthProvider';
 import { cn } from '@/lib/utils';
+import { db } from '@/lib/firebase';
+import { doc, onSnapshot } from 'firebase/firestore';
 
 export default function Dashboard() {
+  const { user, loading: authLoading } = useAuth();
   const router = useRouter();
   const [reviews, setReviews] = useState<ScheduledReview[]>([]);
   const [showForm, setShowForm] = useState(false);
@@ -37,16 +45,28 @@ export default function Dashboard() {
   });
 
   useEffect(() => {
-    loadReviews();
-  }, []);
+    if (!authLoading && !user) {
+      router.push('/login');
+    } else if (user) {
+      loadReviews();
 
-  async function loadReviews() {
-    setIsLoading(true);
+      // Listen for real-time sync signals
+      const unsubscribe = onSnapshot(doc(db, 'system', 'sync'), () => {
+        loadReviews(true);
+      });
+      return () => unsubscribe();
+    }
+  }, [user, authLoading]);
+
+  async function loadReviews(silent = false) {
+    if (!silent) setIsLoading(true);
     try {
       const data = await fetchReviews();
       setReviews(data);
-    } catch (error) {
-      toast.error('Connection failed. Please ensure the database is accessible.');
+    } catch (error: any) {
+      toast.error('Session Sync Failed', {
+        description: error.message || 'Connection failed. Please ensure the database is accessible.'
+      });
     } finally {
       setIsLoading(false);
     }
@@ -135,172 +155,217 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="space-y-8">
-      {/* Page Header */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div>
-          <h1 className="text-3xl font-extrabold tracking-tight text-text-primary">Dashboard</h1>
-          <p className="text-text-secondary mt-1">Foundational assessment management console.</p>
-        </div>
-        <div className="flex gap-3">
-          <button className="btn btn-secondary" aria-label="Assessment Protocols">
-            <SlidersHorizontal size={18} />
-            Protocols
-          </button>
-          <button className="btn btn-primary" onClick={() => setShowForm(true)} aria-label="Schedule New Session">
-            <UserPlus size={18} />
-            Schedule Session
-          </button>
-        </div>
-      </div>
-
-      {/* Stats Overview */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {[
-          { label: 'Cumulative Reviews', value: reviews.length, color: 'primary' },
-          { label: 'Pending Mastery', value: reviews.filter(r => r.status === 'pending').length, color: 'amber' },
-          { label: 'Validated Sessions', value: reviews.filter(r => r.status === 'completed' || r.status === 'failed').length, color: 'green' },
-        ].map((stat, i) => (
-          <div key={i} className="bento-card hover:border-primary/50 transition-colors">
-            <span className="text-[10px] font-black text-text-tertiary uppercase tracking-widest">{stat.label}</span>
-            <div className="text-3xl font-black mt-2 text-text-primary">{stat.value}</div>
+    <div className="space-y-12 pb-20">
+      {/* Premium Hero Banner */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="relative overflow-hidden rounded-[2rem] md:rounded-[2.5rem] bg-slate-900 p-6 md:p-12 text-white shadow-2xl"
+      >
+        <div className="relative z-10 max-w-2xl">
+          <div className="flex items-center gap-3 mb-6 flex-wrap">
+            <span className="badge bg-primary text-white border-none px-4 py-2">System Operational</span>
+            <span className="text-white/40 text-[10px] font-black tracking-widest uppercase">Node: BR-CORE-01</span>
           </div>
-        ))}
-      </div>
-
-      {/* Search Bar */}
-      <div className="relative max-w-md">
-        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-text-tertiary" size={18} />
-        <input
-          type="text"
-          placeholder="Lookup student or batch code..."
-          className="input-field pl-12"
-          value={searchTerm}
-          onChange={e => setSearchTerm(e.target.value)}
-          aria-label="Search reviews"
-        />
-      </div>
-
-      {/* Review Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        <AnimatePresence mode="popLayout">
-          {filteredReviews.length === 0 ? (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="col-span-full py-20 flex flex-col items-center justify-center text-text-tertiary opacity-50"
+          <h1 className="text-3xl md:text-5xl font-black tracking-tighter leading-tight mb-4">
+            Welcome back, <span className="text-primary">{user?.email?.split('@')[0] || 'Admin'}</span>
+          </h1>
+          <p className="text-white/60 text-base md:text-lg font-medium leading-relaxed mb-8">
+            You have <span className="text-white font-bold">{reviews.filter(r => r.status === 'pending').length} sessions</span> awaiting initialization. Review your terminal protocols and student registries.
+          </p>
+          <div className="flex flex-col sm:flex-row flex-wrap gap-4">
+            <button
+              className="btn btn-primary h-12 md:h-14 px-6 md:px-8 text-sm md:text-base shadow-xl w-full sm:w-auto"
+              onClick={() => setShowForm(true)}
             >
-              <Search size={48} className="mb-4" />
-              <p className="font-medium">No records matching your search index.</p>
-            </motion.div>
-          ) : (
-            filteredReviews.map((review) => (
+              <UserPlus size={20} />
+              New Deployment
+            </button>
+            <button className="btn bg-white/10 hover:bg-white/20 border-white/10 text-white h-12 md:h-14 px-6 md:px-8 text-sm md:text-base backdrop-blur-md w-full sm:w-auto">
+              <SlidersHorizontal size={20} />
+              Matrix Config
+            </button>
+          </div>
+        </div>
+
+        {/* Animated Background Elements */}
+        <div className="absolute -right-20 -top-20 w-64 md:w-96 h-64 md:h-96 bg-primary/20 rounded-full blur-[100px] animate-pulse" />
+        <div className="absolute right-20 bottom-0 top-0 w-px bg-gradient-to-b from-transparent via-white/10 to-transparent hidden md:block" />
+        <Terminal className="absolute right-6 md:right-12 top-6 md:top-12 text-white/5 w-32 md:w-64 h-32 md:h-64 -rotate-12" />
+      </motion.div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-4 gap-8">
+        {/* Statistical Ledger */}
+        <div className="xl:col-span-1 space-y-6">
+          <p className="section-title">Statistical Ledger</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-1 gap-4">
+            {[
+              { label: 'Cumulative Index', value: reviews.length, trend: '+12%', icon: LayoutDashboard },
+              { label: 'Active Queue', value: reviews.filter(r => r.status === 'pending').length, trend: 'High', icon: Clock },
+              { label: 'Certified Result', value: reviews.filter(r => r.status === 'completed' || r.status === 'failed').length, trend: '98%', icon: CheckCircle },
+            ].map((stat, i) => (
               <motion.div
-                layout
-                key={review.id}
-                initial={{ opacity: 0, scale: 0.98 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-                className="bento-card group hover:shadow-xl transition-all border-l-4 border-l-transparent hover:border-l-primary"
+                key={i}
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: i * 0.1 }}
+                className="bento-card p-4 md:p-5 flex flex-row items-center justify-between group translate-z-0 h-full"
               >
-                <div className="flex justify-between items-start mb-6">
-                  <div className="flex gap-4">
-                    <div className="w-12 h-12 bg-bg-subtle text-text-tertiary rounded-xl flex items-center justify-center font-black text-xl group-hover:bg-primary-subtle group-hover:text-primary transition-colors">
-                      {review.studentName?.[0] || '?'}
-                    </div>
-                    <div>
-                      <h3 className="font-bold text-lg leading-tight text-text-primary">{review.studentName}</h3>
-                      <p className="text-xs text-text-tertiary font-bold uppercase tracking-wider">{review.batch}</p>
-                    </div>
-                  </div>
-                  <div className="relative">
-                    <button
-                      className={cn(
-                        "btn-icon transition-all shrink-0",
-                        activeMenu === review.id ? "bg-bg-subtle text-primary" : ""
-                      )}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setActiveMenu(activeMenu === review.id ? null : review.id);
-                      }}
-                    >
-                      <MoreVertical size={18} />
-                    </button>
-
-                    <AnimatePresence>
-                      {activeMenu === review.id && (
-                        <>
-                          <div
-                            className="fixed inset-0 z-10"
-                            onClick={() => setActiveMenu(null)}
-                          />
-                          <motion.div
-                            initial={{ opacity: 0, scale: 0.95, y: -10 }}
-                            animate={{ opacity: 1, scale: 1, y: 0 }}
-                            exit={{ opacity: 0, scale: 0.95, y: -10 }}
-                            className="absolute right-0 mt-2 w-48 bg-bg-white border border-border-base rounded-2xl shadow-2xl z-20 overflow-hidden py-1.5"
-                          >
-                            <button
-                              onClick={() => openEditModal(review)}
-                              className="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-bold text-text-secondary hover:bg-bg-subtle hover:text-primary transition-colors text-left"
-                            >
-                              <Edit size={16} />
-                              Edit Properties
-                            </button>
-                            <div className="h-px bg-border-subtle mx-2 my-1" />
-                            <button
-                              onClick={() => handleDeleteReview(review.id)}
-                              className="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-bold text-red-500 hover:bg-red-50 transition-colors text-left"
-                            >
-                              <Trash2 size={16} />
-                              Delete Record
-                            </button>
-                          </motion.div>
-                        </>
-                      )}
-                    </AnimatePresence>
-                  </div>
+                <div className="flex flex-col">
+                  <span className="text-[9px] font-black text-text-tertiary uppercase tracking-widest block mb-0.5">{stat.label}</span>
+                  <div className="text-2xl md:text-3xl font-black text-text-primary group-hover:text-primary transition-colors leading-none">{stat.value}</div>
                 </div>
-
-                <div className="space-y-3 py-4 border-y border-border-subtle my-2">
-                  <div className="flex items-center gap-2 text-text-secondary">
-                    <BookOpen size={16} className="text-primary" />
-                    <span className="text-sm font-bold">{review.module}</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-text-tertiary">
-                    <Calendar size={16} />
-                    <span className="text-xs font-semibold">
-                      LOGGED: {new Date(review.scheduledAt || "").toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="flex justify-between items-center mt-4">
-                  <span className={cn(
-                    "badge font-black uppercase tracking-widest text-[9px]",
-                    review.status === 'completed' ? 'badge-passed' : 'badge-pending'
-                  )}>
-                    {review.status}
-                  </span>
-                  {review.status === 'pending' ? (
-                    <button
-                      onClick={() => startReview(review)}
-                      className="btn btn-primary h-9 px-4 text-[10px] font-black uppercase tracking-widest"
-                    >
-                      Initialize Session
-                      <ArrowRight size={14} />
-                    </button>
-                  ) : (
-                    <div className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-green-600">
-                      <Clock size={14} />
-                      Archived
-                    </div>
-                  )}
+                <div className="w-10 h-10 md:w-12 md:h-12 rounded-xl md:rounded-2xl bg-bg-subtle flex items-center justify-center text-text-tertiary group-hover:bg-primary-subtle group-hover:text-primary transition-all duration-500 shadow-inner shrink-0 ml-4">
+                  <stat.icon size={18} className="md:size-[20px]" />
                 </div>
               </motion.div>
-            ))
-          )}
-        </AnimatePresence>
+            ))}
+          </div>
+
+          <div className="mt-8">
+            <p className="section-title">Directory Filter</p>
+            <div className="relative group">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-text-tertiary group-focus-within:text-primary transition-colors" size={18} />
+              <input
+                type="text"
+                placeholder="Search student manifest..."
+                className="input-field pl-12 h-14 rounded-2xl"
+                value={searchTerm}
+                onChange={e => setSearchTerm(e.target.value)}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Global Registry Map */}
+        <div className="xl:col-span-3">
+          <div className="flex justify-between items-center mb-6">
+            <p className="section-title">Global Registry Map</p>
+            <div className="text-[10px] font-black text-text-tertiary uppercase tracking-widest flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-green-500" /> Live Feed
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <AnimatePresence mode="popLayout">
+              {filteredReviews.length === 0 ? (
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  className="col-span-full py-32 bento-card border-dashed border-2 flex flex-col items-center justify-center text-text-tertiary"
+                >
+                  <Search size={48} className="mb-4 opacity-10" />
+                  <p className="font-bold uppercase tracking-widest text-[10px]">Zero records found in local cache</p>
+                </motion.div>
+              ) : (
+                filteredReviews.map((review, i) => (
+                  <motion.div
+                    layout
+                    key={review.id}
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.9 }}
+                    transition={{ delay: i * 0.05 }}
+                    className="bento-card group p-0 overflow-hidden border-border-base hover:border-primary/50 flex flex-col h-full"
+                  >
+                    <div className="p-6 md:p-8 flex-1">
+                      <div className="flex justify-between items-start mb-6">
+                        <div className="flex gap-4">
+                          <div className="w-14 h-14 bg-bg-subtle text-text-tertiary rounded-[1.25rem] flex items-center justify-center font-black text-xl group-hover:bg-slate-900 group-hover:text-white transition-all duration-500 shadow-inner group-hover:rotate-12 group-hover:scale-110">
+                            {review.studentName?.[0] || '?'}
+                          </div>
+                          <div>
+                            <h3 className="font-black text-xl leading-tight text-text-primary tracking-tight">{review.studentName}</h3>
+                            <div className="flex items-center gap-2 mt-1">
+                              <span className="badge bg-bg-subtle text-text-secondary border-none px-2 py-0.5 lowercase text-[9px]">{review.batch}</span>
+                              <span className="w-1 h-1 rounded-full bg-text-tertiary" />
+                              <span className="text-[10px] font-bold text-text-tertiary uppercase">{review.module}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="relative">
+                          <button
+                            className={cn(
+                              "btn-icon rounded-2xl w-10 h-10 transition-all",
+                              activeMenu === review.id ? "bg-primary text-white" : ""
+                            )}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setActiveMenu(activeMenu === review.id ? null : review.id);
+                            }}
+                          >
+                            <MoreVertical size={18} />
+                          </button>
+
+                          <AnimatePresence>
+                            {activeMenu === review.id && (
+                              <motion.div
+                                initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                                animate={{ opacity: 1, y: 0, scale: 1 }}
+                                exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                                className="absolute right-0 mt-3 w-56 bg-white dark:bg-[#0a0a0a] border border-border-base rounded-2xl shadow-2xl z-50 overflow-hidden py-2"
+                              >
+                                <button onClick={() => openEditModal(review)} className="w-full flex items-center gap-3 px-4 py-3 text-xs font-black uppercase tracking-widest text-text-secondary hover:bg-bg-subtle hover:text-primary transition-all">
+                                  <Edit size={16} /> Edit manifest
+                                </button>
+                                <div className="h-px bg-border-subtle mx-3 my-1" />
+                                <button onClick={() => handleDeleteReview(review.id)} className="w-full flex items-center gap-3 px-4 py-3 text-xs font-black uppercase tracking-widest text-red-500 hover:bg-red-50 transition-all">
+                                  <Trash2 size={16} /> Purge record
+                                </button>
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
+                        </div>
+                      </div>
+
+                      <div className="h-px bg-border-subtle mb-6" />
+
+                      <div className="flex justify-between items-center bg-bg-subtle/50 p-4 rounded-2xl border border-border-subtle">
+                        <div className="space-y-1">
+                          <p className="text-[9px] font-black text-text-tertiary uppercase tracking-widest leading-none">Status Profile</p>
+                          <span className={cn(
+                            "badge px-0 bg-transparent border-none text-[10px] font-black uppercase tracking-widest",
+                            review.status === 'completed' ? 'text-green-500' :
+                              review.status === 'failed' ? 'text-red-500' : 'text-amber-500'
+                          )}>
+                            {review.status === 'pending' ? 'READY FOR OPS' : review.status}
+                          </span>
+                        </div>
+                        <div className="text-right space-y-1">
+                          <p className="text-[9px] font-black text-text-tertiary uppercase tracking-widest leading-none">Timestamp</p>
+                          <p className="text-[10px] font-bold text-text-secondary">
+                            {new Date(review.scheduledAt || "").toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="px-8 pb-8">
+                      {review.status === 'pending' ? (
+                        <button
+                          onClick={() => startReview(review)}
+                          className="btn btn-primary w-full h-14 bg-slate-900 group-hover:bg-primary transition-all duration-300 text-white font-black uppercase tracking-widest text-xs shadow-none group-hover:shadow-xl group-hover:shadow-primary/30"
+                        >
+                          Initialize session
+                          <ArrowRight size={18} className="transition-transform group-hover:translate-x-1" />
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => startReview(review)}
+                          className="btn btn-secondary w-full h-14 bg-bg-subtle/30 border-dashed border-2 hover:border-primary/30 text-text-tertiary font-black uppercase tracking-widest text-xs"
+                        >
+                          View archive logs
+                          <ExternalLink size={16} />
+                        </button>
+                      )}
+                    </div>
+                  </motion.div>
+                ))
+              )}
+            </AnimatePresence>
+          </div>
+        </div>
       </div>
 
       {/* Schedule Modal */}

@@ -13,26 +13,46 @@ import { fetchReviews, createReview, updateReview, API_URL } from '@/lib/api';
 import { useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
 
+import { useAuth } from '@/components/AuthProvider';
+import { db } from '@/lib/firebase';
+import { doc, onSnapshot, setDoc, deleteDoc } from 'firebase/firestore';
 
 export default function ReviewPage({ params }: { params: Promise<{ id: string }> }) {
+    const { user, loading: authLoading } = useAuth();
     const router = useRouter();
     const { id } = use(params);
     const [review, setReview] = useState<ScheduledReview | null>(null);
     const [questions, setQuestions] = useState<Question[]>([]);
     const [isLoading, setIsLoading] = useState(true);
 
+    const getHeaders = async (): Promise<HeadersInit> => {
+        if (!user) return {};
+        const token = await user.getIdToken();
+        return {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+        };
+    };
+
     // Load review and questions
     useEffect(() => {
+        if (!authLoading && !user) {
+            router.push('/login');
+            return;
+        }
+
         const loadPageData = async () => {
+            if (!user) return;
             try {
-                const reviewRes = await fetch(`${API_URL}/reviews/${id}`);
+                const headers = await getHeaders();
+                const reviewRes = await fetch(`${API_URL}/reviews/${id}`, { headers });
                 const reviewData = await reviewRes.json();
 
                 if (!reviewRes.ok) throw new Error();
                 setReview(reviewData);
 
                 const moduleId = reviewData.module.split(' ')[1];
-                const questionsRes = await fetch(`/api/questions?moduleId=${moduleId}`);
+                const questionsRes = await fetch(`/api/questions?moduleId=${moduleId}`, { headers });
                 const questionsData = await questionsRes.json();
 
                 if (questionsRes.ok) {
@@ -46,10 +66,15 @@ export default function ReviewPage({ params }: { params: Promise<{ id: string }>
             }
         };
 
-        loadPageData();
-    }, [id, router]);
+        if (user) {
+            loadPageData();
+        }
+    }, [id, router, user, authLoading]);
 
-    if (isLoading || !review) {
+    const handleCancel = React.useCallback(() => router.push('/'), [router]);
+    const handleComplete = React.useCallback(() => router.push('/'), [router]);
+
+    if (authLoading || (user && isLoading) || (!user && !authLoading)) {
         return (
             <div className="flex items-center justify-center min-h-[60vh]">
                 <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>
@@ -57,11 +82,13 @@ export default function ReviewPage({ params }: { params: Promise<{ id: string }>
         );
     }
 
+    if (!review) return null;
+
     return <ReviewSessionView
         review={review}
         questions={questions}
-        onCancel={() => router.push('/')}
-        onComplete={() => router.push('/')}
+        onCancel={handleCancel}
+        onComplete={handleComplete}
     />;
 }
 
@@ -99,6 +126,11 @@ const ReviewSessionView: React.FC<Props> = ({ review, questions, onCancel, onCom
     const [code, setCode] = useState(() => getSaved('code', '#include <stdio.h>\n\nint main() {\n    printf("Hello World\\n");\n    return 0;\n}'));
     const [output, setOutput] = useState<string[]>(['System: Ready for execution...']);
     const [isRunning, setIsRunning] = useState(false);
+    const [activeTab, setActiveTab] = useState<'theory' | 'compiler' | 'notes'>('theory');
+
+    // Real-time Sync Logic
+    const clientId = React.useRef(Math.random().toString(36).substring(7));
+    const isRemoteUpdate = React.useRef(false);
 
     const handleLanguageChange = (newLang: 'java' | 'c') => {
         setLanguage(newLang);
@@ -109,6 +141,60 @@ const ReviewSessionView: React.FC<Props> = ({ review, questions, onCancel, onCom
         }
     };
 
+    // Track latest state for comparison inside the listener without triggering re-subscriptions
+    const stateRef = React.useRef({
+        currentIndex, results, practicalMark, practicalLink,
+        seconds, notes, language, code, isPaused
+    });
+
+    useEffect(() => {
+        stateRef.current = {
+            currentIndex, results, practicalMark, practicalLink,
+            seconds, notes, language, code, isPaused
+        };
+    }, [currentIndex, results, practicalMark, practicalLink, seconds, notes, language, code, isPaused]);
+
+    // 1. Listen for remote changes
+    useEffect(() => {
+        if (!db) return;
+
+        const docRef = doc(db, 'live_sessions', String(review.id));
+        const unsubscribe = onSnapshot(docRef, (doc) => {
+            if (doc.exists()) {
+                const data = doc.data();
+                // ONLY UPDATE if the change came from a different device/tab
+                if (data.clientId !== clientId.current) {
+                    isRemoteUpdate.current = true;
+
+                    const current = stateRef.current;
+
+                    if (data.currentIndex !== undefined && data.currentIndex !== current.currentIndex) setCurrentIndex(data.currentIndex);
+                    if (data.results !== undefined && JSON.stringify(data.results) !== JSON.stringify(current.results)) setResults(data.results);
+                    if (data.practicalMark !== undefined && data.practicalMark !== current.practicalMark) setPracticalMark(data.practicalMark);
+                    if (data.practicalLink !== undefined && data.practicalLink !== current.practicalLink) setPracticalLink(data.practicalLink || '');
+                    if (data.seconds !== undefined && Math.abs(data.seconds - current.seconds) > 5) setSeconds(data.seconds);
+                    if (data.notes !== undefined && data.notes !== current.notes) setNotes(data.notes || '');
+                    if (data.language !== undefined && data.language !== current.language) setLanguage(data.language);
+                    if (data.code !== undefined && data.code !== current.code) setCode(data.code || '');
+                    if (data.isPaused !== undefined && data.isPaused !== current.isPaused) setIsPaused(data.isPaused);
+
+                    // Reset the flag after a short delay to allow React to flush state
+                    setTimeout(() => { isRemoteUpdate.current = false; }, 100);
+                }
+            } else {
+                // If the document is deleted, it means another device finalized the session
+                // We should only redirect if we haven't already finished it locally
+                if (localStorage.getItem(`review_session_${review.id}`) !== null) {
+                    toast.info('Assessment finalized on another device');
+                    onComplete();
+                }
+            }
+        }, (error) => {
+            console.error('Firestore subscription error:', error);
+        });
+        return () => unsubscribe();
+    }, [review.id, onComplete]);
+
     const currentQuestion = moduleQuestions[currentIndex];
     const currentResult = results.find(r => r.questionId === currentQuestion?.id);
 
@@ -118,9 +204,39 @@ const ReviewSessionView: React.FC<Props> = ({ review, questions, onCancel, onCom
         return () => clearInterval(timer);
     }, [isPaused]);
 
+    // 2. Push local changes to Firestore (Debounced)
     useEffect(() => {
-        const state = { currentIndex, results, practicalMark, practicalLink, seconds, notes, language, code, isPaused };
+        // If this update was triggered by the remote listener, don't push it back
+        if (isRemoteUpdate.current) return;
+
+        const state = {
+            currentIndex,
+            results,
+            practicalMark,
+            practicalLink,
+            seconds,
+            notes,
+            language,
+            code,
+            isPaused,
+            clientId: clientId.current,
+            timestamp: Date.now()
+        };
+
         localStorage.setItem(`review_session_${review.id}`, JSON.stringify(state));
+
+        const timeoutId = setTimeout(async () => {
+            try {
+                // Double check we're not in a remote update before final push
+                if (!isRemoteUpdate.current) {
+                    await setDoc(doc(db, 'live_sessions', String(review.id)), state, { merge: true });
+                }
+            } catch (error) {
+                console.error('Real-time sync error:', error);
+            }
+        }, 800); // 800ms debounce for smoother performance
+
+        return () => clearTimeout(timeoutId);
     }, [currentIndex, results, practicalMark, practicalLink, seconds, notes, language, code, isPaused, review.id]);
 
     const stats = {
@@ -144,8 +260,13 @@ const ReviewSessionView: React.FC<Props> = ({ review, questions, onCancel, onCom
         };
 
         const promise = updateReview(review.id, finalState)
-            .then(() => {
+            .then(async () => {
                 localStorage.removeItem(`review_session_${review.id}`);
+                try {
+                    await deleteDoc(doc(db, 'live_sessions', String(review.id)));
+                } catch (e) {
+                    console.error('Failed to clean up live session:', e);
+                }
                 onComplete();
             });
 
@@ -474,248 +595,295 @@ const ReviewSessionView: React.FC<Props> = ({ review, questions, onCancel, onCom
     return (
         <div className="flex flex-col h-screen overflow-hidden fixed inset-0 z-[200] bg-bg-main">
             {/* HUD Header */}
-            <header className="h-20 bg-bg-white border-b border-border-base flex items-center px-8 shrink-0 shadow-sm z-10">
-                <button onClick={onCancel} className="btn-icon w-10 h-10 hover:bg-bg-subtle">
-                    <ChevronLeft size={24} />
-                </button>
-                <div className="w-px h-8 bg-border-base mx-6" />
-                <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 rounded-xl bg-slate-900 flex items-center justify-center text-white font-black text-lg shadow-lg">
-                        {review.studentName?.[0]}
-                    </div>
-                    <div>
-                        <h2 className="font-bold text-text-primary leading-tight">{review.studentName}</h2>
-                        <p className="text-[10px] font-black uppercase tracking-widest text-text-tertiary">{review.batch} • {review.module}</p>
+            <header className="h-auto min-h-[5rem] lg:h-20 bg-bg-white border-b border-border-base flex flex-col lg:flex-row items-center px-4 md:px-8 py-4 lg:py-0 shrink-0 shadow-sm z-10 gap-4">
+                <div className="flex items-center w-full lg:w-auto">
+                    <button onClick={onCancel} className="btn-icon w-10 h-10 hover:bg-bg-subtle shrink-0">
+                        <ChevronLeft size={24} />
+                    </button>
+                    <div className="w-px h-8 bg-border-base mx-3 md:mx-6" />
+                    <div className="flex items-center gap-3 md:gap-4 overflow-hidden">
+                        <div className="w-8 h-8 md:w-10 md:h-10 rounded-xl bg-slate-900 flex items-center justify-center text-white font-black text-base md:text-lg shadow-lg shrink-0">
+                            {review.studentName?.[0]}
+                        </div>
+                        <div className="overflow-hidden">
+                            <h2 className="font-bold text-text-primary leading-tight truncate text-sm md:text-base">{review.studentName}</h2>
+                            <p className="text-[8px] md:text-[10px] font-black uppercase tracking-widest text-text-tertiary truncate">{review.batch} • {review.module}</p>
+                        </div>
                     </div>
                 </div>
 
-                <div className="flex-1" />
+                <div className="hidden lg:block flex-1" />
 
-                <div className="flex items-center gap-8">
-                    <div className="flex items-center gap-4 bg-bg-subtle p-2 pr-6 rounded-2xl border border-border-base shadow-inner">
+                <div className="flex items-center justify-between w-full lg:w-auto gap-3 md:gap-8">
+                    <div className="flex items-center gap-2 md:gap-4 bg-bg-subtle p-1 md:p-2 md:pr-6 rounded-xl md:2xl border border-border-base shadow-inner">
                         <button
                             onClick={() => setIsPaused(!isPaused)}
                             className={cn(
-                                "w-10 h-10 rounded-xl flex items-center justify-center transition-all shadow-sm",
+                                "w-7 h-7 md:w-10 md:h-10 rounded-lg md:xl flex items-center justify-center transition-all shadow-sm",
                                 isPaused ? "bg-green-100 text-green-600 hover:bg-green-200" : "bg-bg-white text-amber-500 hover:bg-amber-50"
                             )}
                         >
-                            {isPaused ? <Play size={18} fill="currentColor" /> : <Pause size={18} fill="currentColor" />}
+                            {isPaused ? <Play size={14} fill="currentColor" /> : <Pause size={14} fill="currentColor" />}
                         </button>
                         <button
                             onClick={() => window.confirm('Reset evaluation timer?') && setSeconds(0)}
-                            className="w-10 h-10 rounded-xl bg-bg-white text-text-tertiary flex items-center justify-center hover:bg-bg-white hover:text-text-primary border border-transparent hover:border-border-base transition-all"
+                            className="hidden lg:flex w-10 h-10 rounded-xl bg-bg-white text-text-tertiary items-center justify-center hover:bg-bg-white hover:text-text-primary border border-transparent hover:border-border-base transition-all"
                         >
                             <RotateCcw size={18} />
                         </button>
                         <div className="flex flex-col">
-                            <span className="text-[9px] font-black tracking-widest text-text-tertiary leading-none mb-1">{isPaused ? 'HUD PAUSED' : 'SESSION TIME'}</span>
-                            <span className="font-mono font-bold text-xl leading-none text-text-primary">{formatTime(seconds)}</span>
+                            <span className="text-[7px] md:text-[8px] font-black tracking-widest text-text-tertiary leading-none mb-1">{isPaused ? 'PAUSED' : 'TIME'}</span>
+                            <span className="font-mono font-bold text-sm md:text-xl leading-none text-text-primary">{formatTime(seconds)}</span>
                         </div>
                     </div>
 
-                    <div className="text-right">
-                        <span className="text-[9px] font-black tracking-widest text-text-tertiary block mb-1">RUNNING INDEX</span>
-                        <span className={cn("text-2xl font-black leading-none", isPassed ? "text-green-600" : "text-amber-500")}>
-                            {totalScore.toFixed(1)}%
+                    <div className="text-right shrink-0">
+                        <span className="text-[7px] md:text-[9px] font-black tracking-widest text-text-tertiary block mb-1">SCORE</span>
+                        <span className={cn("text-base md:text-2xl font-black leading-none", isPassed ? "text-green-600" : "text-amber-500")}>
+                            {totalScore.toFixed(0)}%
                         </span>
                     </div>
-                    <button className="btn btn-primary h-12 px-8 font-black text-base shadow-lg shadow-primary/20" onClick={handleSubmit}>
-                        Finalize Assessment
-                        <ArrowRight size={20} />
+                    <button className="btn btn-primary h-9 md:h-12 px-3 md:px-8 font-black text-[10px] md:text-base shadow-lg shadow-primary/20 shrink-0" onClick={handleSubmit}>
+                        <span className="hidden sm:inline">Finalize Assessment</span>
+                        <span className="sm:hidden">Finalize</span>
+                        <ArrowRight size={16} className="md:size-20 ml-1 md:ml-2" />
                     </button>
                 </div>
             </header>
 
+            {/* Mobile Tab Navigation */}
+            <div className="lg:hidden flex bg-bg-white border-b border-border-base px-2 py-1 gap-1 shrink-0 overflow-x-auto custom-scrollbar">
+                {[
+                    { id: 'theory', label: 'Theory', icon: FileText },
+                    { id: 'compiler', label: 'Compiler', icon: Code },
+                    { id: 'notes', label: 'Notepad', icon: PenTool }
+                ].map(tab => (
+                    <button
+                        key={tab.id}
+                        onClick={() => setActiveTab(tab.id as any)}
+                        className={cn(
+                            "flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all",
+                            activeTab === tab.id ? "bg-primary text-white shadow-lg" : "text-text-tertiary hover:bg-bg-subtle"
+                        )}
+                    >
+                        <tab.icon size={14} />
+                        {tab.label}
+                    </button>
+                ))}
+            </div>
+
             {/* Workspace */}
-            <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 overflow-hidden bg-bg-subtle">
-                {/* Theoretical Plane */}
-                <div className="p-12 overflow-y-auto custom-scrollbar bg-bg-main">
-                    <div className="max-w-xl mx-auto space-y-12">
-                        <div className="flex justify-between items-center bg-bg-white p-4 pr-6 rounded-2xl shadow-sm border border-border-base">
-                            <span className="badge bg-primary text-white border-none px-4">Q-{currentIndex + 1} / {moduleQuestions.length}</span>
-                            <div className="flex gap-2">
-                                <button className="btn btn-secondary w-10 p-0 h-10 bg-transparent" onClick={() => setCurrentIndex(Math.max(0, currentIndex - 1))} disabled={currentIndex === 0}>
-                                    <ArrowLeft size={20} />
-                                </button>
-                                <button className="btn btn-secondary w-10 p-0 h-10 bg-transparent" onClick={() => setCurrentIndex(Math.min(moduleQuestions.length - 1, currentIndex + 1))} disabled={currentIndex === moduleQuestions.length - 1}>
-                                    <ArrowRight size={20} />
-                                </button>
+            <div className="flex-1 overflow-hidden bg-bg-subtle">
+                <div className="flex h-full">
+                    {/* Theoretical Plane */}
+                    <div className={cn(
+                        "flex-1 overflow-y-auto custom-scrollbar bg-bg-main lg:block",
+                        activeTab === 'theory' ? "block" : "hidden"
+                    )}>
+                        <div className="max-w-2xl mx-auto p-4 md:p-8 lg:p-12 space-y-8 lg:space-y-12">
+                            <div className="flex justify-between items-center bg-bg-white p-3 md:p-4 pr-5 md:pr-6 rounded-2xl shadow-sm border border-border-base">
+                                <span className="badge bg-primary text-white border-none px-3 md:px-4 text-[10px] md:text-xs">Q-{currentIndex + 1} / {moduleQuestions.length}</span>
+                                <div className="flex gap-2">
+                                    <button className="btn btn-secondary w-8 md:w-10 p-0 h-8 md:h-10 bg-transparent border-none hover:bg-bg-subtle" onClick={() => setCurrentIndex(Math.max(0, currentIndex - 1))} disabled={currentIndex === 0}>
+                                        <ArrowLeft size={20} className="w-4.5 h-4.5 md:w-5 md:h-5" />
+                                    </button>
+                                    <button className="btn btn-secondary w-8 md:w-10 p-0 h-8 md:h-10 bg-transparent border-none hover:bg-bg-subtle" onClick={() => setCurrentIndex(Math.min(moduleQuestions.length - 1, currentIndex + 1))} disabled={currentIndex === moduleQuestions.length - 1}>
+                                        <ArrowRight size={20} className="w-4.5 h-4.5 md:w-5 md:h-5" />
+                                    </button>
+                                </div>
                             </div>
-                        </div>
 
-                        <AnimatePresence mode="wait">
-                            {currentQuestion ? (
-                                <motion.div
-                                    key={currentQuestion.id}
-                                    initial={{ opacity: 0, x: -20 }}
-                                    animate={{ opacity: 1, x: 0 }}
-                                    exit={{ opacity: 0, x: 20 }}
-                                    className="space-y-10"
-                                >
-                                    <h1 className="text-4xl font-black text-text-primary tracking-tight leading-tight">{currentQuestion.text}</h1>
+                            <AnimatePresence mode="wait">
+                                {currentQuestion ? (
+                                    <motion.div
+                                        key={currentQuestion.id}
+                                        initial={{ opacity: 0, x: -10 }}
+                                        animate={{ opacity: 1, x: 0 }}
+                                        exit={{ opacity: 0, x: 10 }}
+                                        className="space-y-8 md:space-y-10"
+                                    >
+                                        <h1 className="text-2xl md:text-4xl font-black text-text-primary tracking-tight leading-tight">{currentQuestion.text}</h1>
 
-                                    <div className="bg-bg-white p-8 rounded-3xl border border-primary/10 shadow-xl border-l-4 border-l-primary relative">
-                                        <div className="flex gap-2 text-[10px] font-black tracking-widest text-primary mb-4 items-center">
-                                            <PenTool size={14} /> KNOWLEDGE REFERENCE
+                                        <div className="bg-bg-white p-6 md:p-8 rounded-2xl md:3xl border border-primary/10 shadow-xl border-l-[6px] border-l-primary relative">
+                                            <div className="flex gap-2 text-[10px] font-black tracking-widest text-primary mb-3 md:mb-4 items-center uppercase">
+                                                <PenTool size={14} /> Knowledge Reference
+                                            </div>
+                                            <div className="text-base md:text-lg text-text-secondary leading-relaxed font-medium whitespace-pre-wrap">
+                                                {currentQuestion.answer || "Experimental practical question - Verify logic directly."}
+                                            </div>
                                         </div>
-                                        <p className="text-lg text-text-secondary leading-relaxed font-medium">
-                                            {currentQuestion.answer || "Experimental practical question - Verify logic directly."}
-                                        </p>
-                                    </div>
 
-                                    <div className="grid grid-cols-2 gap-4">
-                                        {[
-                                            { status: 'answered' as ReviewStatus, label: 'Exemplary', icon: CheckCircle, color: '#10b981', bg: 'bg-green-50' },
-                                            { status: 'need-improvement' as ReviewStatus, label: 'Correction', icon: AlertCircle, color: '#f59e0b', bg: 'bg-amber-50' },
-                                            { status: 'wrong' as ReviewStatus, label: 'Unsatisfactory', icon: XCircle, color: '#ef4444', bg: 'bg-red-50' },
-                                            { status: 'skip' as ReviewStatus, label: 'Bypass', icon: SkipForward, color: '#64748b', bg: 'bg-slate-100' }
-                                        ].map(btn => (
-                                            <button
-                                                key={btn.status}
-                                                onClick={() => handleMark(btn.status)}
-                                                className={cn(
-                                                    "flex items-center gap-4 p-5 rounded-2xl border-2 transition-all group relative overflow-hidden",
-                                                    currentResult?.status === btn.status
-                                                        ? "bg-bg-white border-primary shadow-lg ring-4 ring-primary-subtle"
-                                                        : "bg-transparent border-border-base hover:border-text-tertiary"
-                                                )}
-                                                style={{ color: currentResult?.status === btn.status ? btn.color : '#475569' }}
-                                            >
-                                                <btn.icon size={24} className={cn("transition-transform group-hover:scale-110", currentResult?.status === btn.status && "animate-pulse")} />
-                                                <span className="font-black text-base uppercase tracking-tight">{btn.label}</span>
-                                                {currentResult?.status === btn.status && (
-                                                    <motion.div layoutId="activeMark" className="absolute right-4 w-2 h-2 rounded-full bg-primary" />
-                                                )}
-                                            </button>
-                                        ))}
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4">
+                                            {[
+                                                { status: 'answered' as ReviewStatus, label: 'Exemplary', icon: CheckCircle, color: '#10b981', bg: 'bg-green-50', border: 'border-green-200' },
+                                                { status: 'need-improvement' as ReviewStatus, label: 'Correction', icon: AlertCircle, color: '#f59e0b', bg: 'bg-amber-50', border: 'border-amber-200' },
+                                                { status: 'wrong' as ReviewStatus, label: 'Unsatisfactory', icon: XCircle, color: '#ef4444', bg: 'bg-red-50', border: 'border-red-200' },
+                                                { status: 'skip' as ReviewStatus, label: 'Bypass', icon: SkipForward, color: '#64748b', bg: 'bg-slate-50', border: 'border-slate-200' }
+                                            ].map(btn => (
+                                                <button
+                                                    key={btn.status}
+                                                    onClick={() => handleMark(btn.status)}
+                                                    className={cn(
+                                                        "flex items-center gap-4 p-4 md:p-5 rounded-2xl border-2 transition-all group relative overflow-hidden",
+                                                        currentResult?.status === btn.status
+                                                            ? "bg-bg-white border-primary shadow-lg ring-4 ring-primary-subtle"
+                                                            : cn("bg-transparent border-transparent hover:bg-bg-white shadow-sm", btn.bg)
+                                                    )}
+                                                    style={{ color: currentResult?.status === btn.status ? btn.color : '#475569' }}
+                                                >
+                                                    <btn.icon size={22} className={cn("transition-transform group-hover:scale-110", currentResult?.status === btn.status && "animate-pulse")} />
+                                                    <span className="font-black text-xs md:text-sm uppercase tracking-widest">{btn.label}</span>
+                                                    {currentResult?.status === btn.status && (
+                                                        <motion.div layoutId="activeMark" className="absolute right-4 w-2 h-2 rounded-full bg-primary" />
+                                                    )}
+                                                    <div className={cn("absolute inset-0 opacity-0 group-hover:opacity-10 transition-opacity", btn.bg)} />
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </motion.div>
+                                ) : (
+                                    <div className="py-20 md:py-32 flex flex-col items-center justify-center text-text-tertiary opacity-30">
+                                        <Terminal size={64} className="mb-6 w-12 h-12 md:w-16 md:h-16" />
+                                        <span className="font-black tracking-widest uppercase text-xs md:text-sm">Null Dataset Reference</span>
                                     </div>
-                                </motion.div>
-                            ) : (
-                                <div className="py-32 flex flex-col items-center justify-center text-text-tertiary opacity-30">
-                                    <Terminal size={64} className="mb-6" />
-                                    <span className="font-black tracking-widest uppercase">Null Dataset Reference</span>
-                                </div>
-                            )}
-                        </AnimatePresence>
+                                )}
+                            </AnimatePresence>
+                        </div>
                     </div>
-                </div>
 
-                {/* Practical Plane */}
-                <div className="p-12 space-y-8 overflow-y-auto custom-scrollbar border-l border-border-base">
-                    {/* Virtual Compiler */}
-                    <div className="bg-slate-900 rounded-3xl border border-slate-700 shadow-2xl overflow-hidden flex flex-col min-h-[440px]">
-                        <div className="h-14 bg-slate-800 border-b border-slate-700 flex items-center justify-between px-6">
-                            <div className="flex gap-6 h-full">
-                                <div className="flex gap-2 items-center text-indigo-400">
-                                    <Code size={18} />
-                                    <span className="text-[10px] font-black tracking-widest uppercase">Logical.Runtime</span>
+                    {/* Practical Plane (Compiler & Notes) */}
+                    <div className={cn(
+                        "flex-1 lg:flex flex-col h-full bg-bg-subtle border-l border-border-base lg:max-w-[50%]",
+                        activeTab !== 'theory' ? "flex" : "hidden"
+                    )}>
+                        <div className="flex-1 overflow-y-auto custom-scrollbar p-4 md:p-8 space-y-6 md:space-y-8">
+                            {/* Virtual Compiler */}
+                            <div className={cn(
+                                "bg-slate-900 rounded-3xl border border-slate-700 shadow-2xl overflow-hidden flex flex-col min-h-[350px] lg:min-h-[440px]",
+                                activeTab === 'compiler' ? "block" : "hidden lg:flex"
+                            )}>
+                                <div className="h-12 md:h-14 bg-slate-800 border-b border-slate-700 flex items-center justify-between px-4 md:px-6">
+                                    <div className="flex gap-4 md:gap-6 h-full">
+                                        <div className="flex gap-2 items-center text-indigo-400">
+                                            <Code size={16} />
+                                            <span className="text-[9px] md:text-[10px] font-black tracking-widest uppercase">logical.runtime</span>
+                                        </div>
+                                        <div className="flex gap-1 h-full items-center">
+                                            {['c', 'java'].map(l => (
+                                                <button
+                                                    key={l}
+                                                    onClick={() => handleLanguageChange(l as any)}
+                                                    className={cn(
+                                                        "px-2 md:px-4 h-7 md:h-8 rounded-lg text-[9px] md:text-[10px] font-black uppercase tracking-widest transition-all",
+                                                        language === l ? "bg-slate-700 text-white" : "text-slate-500 hover:text-slate-300"
+                                                    )}
+                                                >
+                                                    {l}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                    <button
+                                        onClick={runCode}
+                                        disabled={isRunning}
+                                        className="bg-indigo-600 hover:bg-indigo-500 text-white h-7 md:h-8 px-3 md:px-4 rounded-lg flex items-center gap-2 text-[9px] md:text-[10px] font-black uppercase tracking-widest disabled:opacity-50 transition-all shadow-lg shadow-indigo-900/40"
+                                    >
+                                        {isRunning ? (
+                                            <div className="w-3 h-3 border-2 border-white/50 border-t-white rounded-full animate-spin" />
+                                        ) : <Play size={10} fill="currentColor" />}
+                                        Run
+                                    </button>
                                 </div>
-                                <div className="flex gap-1 h-full items-center">
-                                    {['c', 'java'].map(l => (
+                                <textarea
+                                    className="flex-1 bg-transparent p-6 md:p-8 font-mono text-xs md:text-sm leading-relaxed text-slate-300 outline-none resize-none"
+                                    value={code}
+                                    onChange={e => setCode(e.target.value)}
+                                    spellCheck={false}
+                                />
+                                <div className="h-32 md:h-40 bg-black/40 border-t border-slate-800 p-4 md:p-6 font-mono text-[10px] md:text-[11px] text-green-400/80 overflow-y-auto">
+                                    <div className="flex gap-2 text-slate-500 border-b border-slate-800 pb-2 mb-3 md:mb-4 uppercase tracking-widest font-black text-[8px] md:text-[9px]">
+                                        Terminal Output
+                                    </div>
+                                    {output.map((line, i) => <div key={i} className="mb-1">{line}</div>)}
+                                </div>
+                            </div>
+
+                            {/* Observations and Practical Stats */}
+                            <div className={cn(
+                                "grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-8",
+                                activeTab === 'notes' ? "block md:grid" : "hidden lg:grid"
+                            )}>
+                                {/* Analyst Notepad */}
+                                <div className="bg-amber-50 rounded-[2rem] md:rounded-[2.5rem] p-6 md:p-8 border border-amber-100 shadow-inner flex flex-col group transition-all hover:bg-amber-100/50 min-h-[250px] md:min-h-[300px]">
+                                    <div className="flex justify-between items-center mb-4 md:mb-6">
+                                        <div className="flex gap-2 text-[10px] font-black tracking-widest text-amber-600 uppercase">
+                                            <FileText size={14} /> Observations
+                                        </div>
                                         <button
-                                            key={l}
-                                            onClick={() => handleLanguageChange(l as any)}
-                                            className={cn(
-                                                "px-4 h-8 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all",
-                                                language === l ? "bg-slate-700 text-white" : "text-slate-500 hover:text-slate-300"
-                                            )}
+                                            onClick={() => notes && (navigator.clipboard.writeText(notes), toast.success('Copied to clipboard'))}
+                                            className="p-2 bg-white/50 rounded-xl text-amber-600 hover:bg-white transition-all shadow-sm"
                                         >
-                                            {l}
+                                            <Copy size={16} />
                                         </button>
-                                    ))}
-                                </div>
-                            </div>
-                            <button
-                                onClick={runCode}
-                                disabled={isRunning}
-                                className="bg-indigo-600 hover:bg-indigo-500 text-white h-8 px-4 rounded-lg flex items-center gap-2 text-[10px] font-black uppercase tracking-widest disabled:opacity-50 transition-all shadow-lg shadow-indigo-900/40"
-                            >
-                                {isRunning ? (
-                                    <div className="w-3 h-3 border-2 border-white/50 border-t-white rounded-full animate-spin" />
-                                ) : <Play size={12} fill="currentColor" />}
-                                Execute
-                            </button>
-                        </div>
-                        <textarea
-                            className="flex-1 bg-transparent p-8 font-mono text-sm leading-relaxed text-slate-300 outline-none resize-none"
-                            value={code}
-                            onChange={e => setCode(e.target.value)}
-                            spellCheck={false}
-                        />
-                        <div className="h-40 bg-black/40 border-t border-slate-800 p-6 font-mono text-[11px] text-green-400/80 overflow-y-auto">
-                            <div className="flex gap-2 mb-2 text-slate-500 border-b border-slate-800 pb-2 mb-4 uppercase tracking-widest font-black text-[9px]">
-                                Terminal Output
-                            </div>
-                            {output.map((line, i) => <div key={i} className="mb-1">{line}</div>)}
-                        </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                        {/* Analyst Notepad */}
-                        <div className="bg-amber-50 h-full rounded-[2.5rem] p-8 border border-amber-100 shadow-inner flex flex-col group transition-all hover:bg-amber-100/50">
-                            <div className="flex justify-between items-center mb-6">
-                                <div className="flex gap-2 text-[10px] font-black tracking-widest text-amber-600 uppercase">
-                                    <FileText size={14} /> Live Observations
-                                </div>
-                                <button
-                                    onClick={() => notes && (navigator.clipboard.writeText(notes), toast.success('Observations persistent to clipboard'))}
-                                    className="p-2 bg-bg-white/50 rounded-xl text-amber-600 hover:bg-bg-white transition-all shadow-sm"
-                                >
-                                    <Copy size={16} />
-                                </button>
-                            </div>
-                            <textarea
-                                className="flex-1 bg-transparent border-none resize-none outline-none text-base text-amber-900 font-medium placeholder:text-amber-300 leading-relaxed"
-                                placeholder="Synchronize findings here..."
-                                value={notes}
-                                onChange={e => setNotes(e.target.value)}
-                            />
-                        </div>
-
-                        {/* Practical Proficiency Hud */}
-                        <div className={cn(
-                            "bg-bg-white rounded-[2.5rem] p-8 border-2 flex flex-col justify-between transition-all shadow-sm",
-                            linkError ? "border-red-500 ring-4 ring-red-50" : "border-border-base"
-                        )}>
-                            <div className="flex gap-2 text-[10px] font-black tracking-widest text-text-tertiary uppercase mb-6">
-                                <Terminal size={14} /> Practical Validation
-                            </div>
-
-                            <div className="space-y-8">
-                                <div className="space-y-3">
-                                    <div className="flex justify-between items-center">
-                                        <label className="text-[10px] font-black uppercase text-text-tertiary tracking-widest">Question Repository *</label>
-                                        <ExternalLink size={14} className="text-primary hover:text-primary-hover cursor-pointer" />
                                     </div>
-                                    <input
-                                        type="text"
-                                        className={cn(
-                                            "h-12 w-full px-5 bg-bg-subtle rounded-2xl text-sm font-bold shadow-inner outline-none transition-all",
-                                            linkError ? "border border-red-200 focus:bg-bg-white focus:border-red-500" : "focus:bg-bg-white focus:ring-4 focus:ring-primary-subtle"
-                                        )}
-                                        placeholder="https://github.com/assessment/..."
-                                        value={practicalLink}
-                                        onChange={e => {
-                                            setPracticalLink(e.target.value);
-                                            if (e.target.value) setLinkError(false);
-                                        }}
+                                    <textarea
+                                        className="flex-1 bg-transparent border-none resize-none outline-none text-sm md:text-base text-amber-900 font-medium placeholder:text-amber-300 leading-relaxed"
+                                        placeholder="Note student findings..."
+                                        value={notes}
+                                        onChange={e => setNotes(e.target.value)}
                                     />
                                 </div>
 
-                                <div className="space-y-4">
-                                    <div className="flex justify-between items-center">
-                                        <label className="text-[10px] font-black uppercase text-text-tertiary tracking-widest">Execution Quality</label>
-                                        <span className="text-xl font-black text-primary">{practicalMark}<span className="text-xs opacity-30 ml-0.5">/ 10</span></span>
+                                {/* Practical Proficiency Hud */}
+                                <div className={cn(
+                                    "bg-bg-white rounded-[2rem] md:rounded-[2.5rem] p-6 md:p-8 border-2 flex flex-col justify-between transition-all shadow-sm min-h-[250px] md:min-h-[300px]",
+                                    linkError ? "border-red-500 ring-4 ring-red-50" : "border-border-base"
+                                )}>
+                                    <div className="flex gap-2 text-[10px] font-black tracking-widest text-text-tertiary uppercase mb-4 md:mb-6">
+                                        <Terminal size={14} /> Practical Validation
                                     </div>
-                                    <div className="relative h-2 flex items-center">
-                                        <input
-                                            type="range"
-                                            min="0" max="10" step="0.5"
-                                            className="w-full h-full appearance-none bg-slate-100 rounded-full outline-none [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-6 [&::-webkit-slider-thumb]:h-6 [&::-webkit-slider-thumb]:bg-primary [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:shadow-lg [&::-webkit-slider-thumb]:cursor-pointer [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-white"
-                                            value={practicalMark}
-                                            onChange={e => setPracticalMark(parseFloat(e.target.value))}
-                                        />
+
+                                    <div className="space-y-6 md:space-y-8">
+                                        <div className="space-y-2 md:space-y-3">
+                                            <div className="flex justify-between items-center">
+                                                <label className="text-[9px] md:text-[10px] font-black uppercase text-text-tertiary tracking-widest">Repo Link *</label>
+                                                <ExternalLink size={12} className="text-primary cursor-pointer" />
+                                            </div>
+                                            <input
+                                                type="text"
+                                                className={cn(
+                                                    "h-10 md:h-12 w-full px-4 md:px-5 bg-bg-subtle rounded-xl md:2xl text-xs md:text-sm font-bold shadow-inner outline-none transition-all",
+                                                    linkError ? "border border-red-200 focus:bg-bg-white focus:border-red-500" : "focus:bg-bg-white focus:ring-4 focus:ring-primary-subtle"
+                                                )}
+                                                placeholder="https://github.com/..."
+                                                value={practicalLink}
+                                                onChange={e => {
+                                                    setPracticalLink(e.target.value);
+                                                    if (e.target.value) setLinkError(false);
+                                                }}
+                                            />
+                                        </div>
+
+                                        <div className="space-y-3 md:space-y-4">
+                                            <div className="flex justify-between items-center px-1">
+                                                <label className="text-[9px] md:text-[10px] font-black uppercase text-text-tertiary tracking-widest">Logical Mark</label>
+                                                <span className="text-sm md:text-lg font-black text-primary">{practicalMark}<span className="text-[10px] opacity-30">/10</span></span>
+                                            </div>
+                                            <input
+                                                type="range"
+                                                min="0"
+                                                max="10"
+                                                step="1"
+                                                value={practicalMark}
+                                                onChange={e => setPracticalMark(parseInt(e.target.value))}
+                                                className="w-full h-1.5 md:h-2 bg-bg-subtle rounded-lg appearance-none cursor-pointer accent-primary"
+                                            />
+                                            <div className="flex justify-between px-1 text-[8px] md:text-[9px] font-bold text-text-tertiary uppercase tracking-tighter">
+                                                <span>Beginner</span>
+                                                <span>Intermediate</span>
+                                                <span>Master</span>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -723,6 +891,6 @@ const ReviewSessionView: React.FC<Props> = ({ review, questions, onCancel, onCom
                     </div>
                 </div>
             </div>
-        </div >
+        </div>
     );
 };

@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import sql from '@/lib/db';
 import { z } from 'zod';
+import { getAuthUser } from '@/lib/auth-server';
+import { triggerGlobalSync } from '@/lib/realtime';
 
 const questionSchema = z.object({
     text: z.string().min(1),
@@ -9,6 +11,11 @@ const questionSchema = z.object({
 });
 
 export async function GET(request: Request) {
+    const user = await getAuthUser(request);
+    if (!user) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { searchParams } = new URL(request.url);
     const moduleId = searchParams.get('moduleId');
 
@@ -16,36 +23,46 @@ export async function GET(request: Request) {
         let questions;
         if (moduleId) {
             questions = await sql`
-                SELECT id, text, module_id, answer, created_at as "createdAt"
+                SELECT id, text, module_id, answer, created_at as "createdAt", user_id as "userId"
                 FROM questions
-                WHERE module_id = ${Number(moduleId)}
+                WHERE module_id = ${Number(moduleId)} AND (user_id = ${user.uid} OR user_id IS NULL)
                 ORDER BY id ASC
             `;
         } else {
             questions = await sql`
-                SELECT id, text, module_id, answer, created_at as "createdAt"
+                SELECT id, text, module_id, answer, created_at as "createdAt", user_id as "userId"
                 FROM questions
+                WHERE user_id = ${user.uid} OR user_id IS NULL
                 ORDER BY module_id ASC, id ASC
             `;
         }
         return NextResponse.json(questions);
-    } catch (error) {
-        console.error('Database Error:', error);
-        return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+    } catch (error: any) {
+        console.error('API: Questions Database Error:', error);
+        return NextResponse.json({
+            error: 'Internal Server Error',
+            details: error.message
+        }, { status: 500 });
     }
 }
 
 export async function POST(request: Request) {
+    const user = await getAuthUser(request);
+    if (!user) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     try {
         const body = await request.json();
         const validatedData = questionSchema.parse(body);
 
         const [newQuestion] = await sql`
-            INSERT INTO questions (text, module_id, answer, created_at, updated_at)
-            VALUES (${validatedData.text}, ${validatedData.module_id}, ${validatedData.answer || null}, NOW(), NOW())
-            RETURNING id, text, module_id, answer, created_at as "createdAt"
+            INSERT INTO questions (text, module_id, answer, user_id, created_at, updated_at)
+            VALUES (${validatedData.text}, ${validatedData.module_id}, ${validatedData.answer || null}, ${user.uid}, NOW(), NOW())
+            RETURNING id, text, module_id, answer, user_id as "userId", created_at as "createdAt"
         `;
 
+        await triggerGlobalSync();
         return NextResponse.json(newQuestion, { status: 201 });
     } catch (error) {
         if (error instanceof z.ZodError) {

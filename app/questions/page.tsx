@@ -6,25 +6,33 @@ import {
     Search,
     Edit,
     Trash2,
-    Filter,
-    BookOpen,
     Database,
     Loader2,
-    ChevronDown,
-    X
+    X,
+    LogOut,
+    User as UserIcon,
+    BookOpen
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { useAuth } from '@/components/AuthProvider';
+import { useRouter } from 'next/navigation';
+import { signOut } from 'firebase/auth';
+import { auth, db } from '@/lib/firebase';
+import { doc, onSnapshot } from 'firebase/firestore';
 
 interface Question {
     id: number;
     text: string;
     module_id: number;
     answer: string | null;
+    userId: string | null;
 }
 
 export default function QuestionPoolPage() {
+    const { user, loading: authLoading } = useAuth();
+    const router = useRouter();
     const [questions, setQuestions] = useState<Question[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
@@ -40,21 +48,46 @@ export default function QuestionPoolPage() {
     });
 
     useEffect(() => {
-        fetchQuestions();
-    }, []);
+        if (!authLoading && !user) {
+            router.push('/login');
+        } else if (user) {
+            fetchQuestions();
 
-    const fetchQuestions = async () => {
-        setIsLoading(true);
+            // Listen for real-time sync signals
+            const unsubscribe = onSnapshot(doc(db, 'system', 'sync'), () => {
+                fetchQuestions(true);
+            });
+            return () => unsubscribe();
+        }
+    }, [user, authLoading]);
+
+    const getHeaders = async (): Promise<HeadersInit> => {
+        if (!user) return {};
+        const token = await user.getIdToken();
+        return {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+        };
+    };
+
+    const fetchQuestions = async (silent = false) => {
+        if (!silent) setIsLoading(true);
         try {
-            const res = await fetch('/api/questions');
-            const data = await res.json();
-            if (res.ok) {
-                setQuestions(data);
-            } else {
-                toast.error(data.error || 'Failed to fetch questions');
+            const headers = await getHeaders();
+            const res = await fetch('/api/questions', { headers });
+
+            const contentType = res.headers.get('content-type');
+            if (!res.ok) {
+                const errorData = contentType?.includes('application/json') ? await res.json() : null;
+                throw new Error(errorData?.details || errorData?.error || `Server Error (${res.status})`);
             }
-        } catch (error) {
-            toast.error('Connection error');
+
+            const data = await res.json();
+            setQuestions(data);
+        } catch (error: any) {
+            toast.error('Repository Error', {
+                description: error.message || 'Check your database handshake'
+            });
         } finally {
             setIsLoading(false);
         }
@@ -66,7 +99,11 @@ export default function QuestionPoolPage() {
 
         toast.loading('Synchronizing pool...');
         try {
-            const res = await fetch('/api/questions/sync', { method: 'POST' });
+            const headers = await getHeaders();
+            const res = await fetch('/api/questions/sync', {
+                method: 'POST',
+                headers
+            });
             const data = await res.json();
             if (res.ok) {
                 toast.success(data.message);
@@ -85,12 +122,17 @@ export default function QuestionPoolPage() {
         if (!window.confirm('Delete this question permanently?')) return;
 
         try {
-            const res = await fetch(`/api/questions/${id}`, { method: 'DELETE' });
+            const headers = await getHeaders();
+            const res = await fetch(`/api/questions/${id}`, {
+                method: 'DELETE',
+                headers
+            });
             if (res.ok) {
                 setQuestions(prev => prev.filter(q => q.id !== id));
                 toast.success('Question removed');
             } else {
-                toast.error('Failed to delete');
+                const data = await res.json();
+                toast.error(data.error || 'Failed to delete');
             }
         } catch (error) {
             toast.error('Connection error');
@@ -105,9 +147,10 @@ export default function QuestionPoolPage() {
         const method = isEditing ? 'PATCH' : 'POST';
 
         try {
+            const headers = await getHeaders();
             const res = await fetch(endpoint, {
                 method,
-                headers: { 'Content-Type': 'application/json' },
+                headers,
                 body: JSON.stringify({
                     text: formData.text,
                     module_id: Number(formData.moduleId),
@@ -128,6 +171,12 @@ export default function QuestionPoolPage() {
         } finally {
             setIsSubmitting(false);
         }
+    };
+
+    const handleLogout = async () => {
+        await signOut(auth);
+        router.push('/login');
+        toast.success('Logged out');
     };
 
     const openEdit = (question: Question) => {
@@ -155,209 +204,233 @@ export default function QuestionPoolPage() {
 
     const modules = [1, 2, 3, 4, 5, 6];
 
-    return (
-        <div className="space-y-8 min-h-screen">
-            <div className="flex justify-between items-end">
-                <div>
-                    <h1 className="text-3xl font-black tracking-tight text-text-primary">Question Pool</h1>
-                    <p className="text-text-secondary mt-1">Manage theoretical assessment matrix.</p>
-                </div>
-                <div className="flex gap-3">
-                    <button
-                        onClick={handleSync}
-                        className="btn btn-secondary"
-                    >
-                        <Database size={18} />
-                        Sync Pool
-                    </button>
-                    <button
-                        onClick={() => setShowForm(true)}
-                        className="btn btn-primary"
-                    >
-                        <Plus size={18} />
-                        Add Question
-                    </button>
-                </div>
+    if (authLoading || (!user && isLoading)) {
+        return (
+            <div className="h-[80vh] flex items-center justify-center">
+                <Loader2 className="animate-spin text-primary" size={48} />
             </div>
+        );
+    }
 
-            {/* Filters */}
-            <div className="flex flex-col md:flex-row gap-4 items-center bg-bg-white p-4 rounded-2xl border border-border-base shadow-sm">
-                <div className="relative flex-1 w-full">
-                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-text-tertiary" size={18} />
+    return (
+        <div className="space-y-12 pb-20">
+            {/* Page Header Matrix */}
+            <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="relative overflow-hidden rounded-[2rem] md:rounded-[2.5rem] bg-indigo-950 p-6 md:p-12 text-white shadow-2xl"
+            >
+                <div className="relative z-10">
+                    <div className="flex items-center gap-3 mb-6 flex-wrap">
+                        <span className="badge bg-white/20 text-white border-none px-4 py-2">Repository Active</span>
+                        <div className="flex items-center gap-1.5 px-3 py-1 bg-white/10 rounded-full text-[10px] font-black uppercase tracking-widest text-white/60 backdrop-blur-md">
+                            <UserIcon size={12} />
+                            {user?.email}
+                        </div>
+                    </div>
+                    <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-8">
+                        <div>
+                            <h1 className="text-3xl md:text-5xl font-black tracking-tighter leading-tight mb-2">Theoretical Matrix</h1>
+                            <p className="text-white/60 text-base md:text-lg font-medium">Configure and synchronize the foundational assessment question bank.</p>
+                        </div>
+                        <div className="flex gap-3 w-full md:w-auto">
+                            <button
+                                onClick={handleSync}
+                                className="btn bg-white/10 hover:bg-white/20 border-white/10 text-white h-12 md:h-14 px-4 md:px-8 text-sm md:text-base backdrop-blur-md flex-1 md:flex-none"
+                            >
+                                <Database size={18} />
+                                Sync Pool
+                            </button>
+                            <button
+                                onClick={() => setShowForm(true)}
+                                className="btn btn-primary h-12 md:h-14 px-4 md:px-8 text-sm md:text-base shadow-xl flex-1 md:flex-none"
+                            >
+                                <Plus size={18} />
+                                Create Index
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Background Decor */}
+                <div className="absolute -right-24 -bottom-24 w-64 md:w-80 h-64 md:h-80 bg-primary/30 rounded-full blur-[80px]" />
+                <BookOpen className="absolute right-6 md:right-12 top-6 md:top-12 text-white/5 w-32 md:w-48 h-32 md:h-48 rotate-12" />
+            </motion.div>
+
+            {/* Filter Hub */}
+            <div className="sticky top-4 z-30 p-2 glass rounded-2xl md:rounded-3xl border border-border-base shadow-xl mx-auto max-w-5xl flex flex-col md:flex-row gap-2 md:gap-4 items-center">
+                <div className="relative flex-1 w-full group">
+                    <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-text-tertiary group-focus-within:text-primary transition-colors" size={20} />
                     <input
                         type="text"
-                        placeholder="Search questions or answers..."
-                        className="input-field pl-12 h-11"
+                        placeholder="Search matrix protocols..."
+                        className="w-full h-12 md:h-14 pl-14 pr-6 bg-transparent text-sm font-bold text-text-primary outline-none placeholder:text-text-tertiary"
                         value={searchTerm}
                         onChange={e => setSearchTerm(e.target.value)}
                     />
                 </div>
-                <div className="flex gap-2 w-full md:w-auto overflow-x-auto pb-2 md:pb-0 scrollbar-hide">
+                <div className="flex gap-1.5 p-1 bg-bg-subtle rounded-xl md:rounded-2xl w-full md:w-auto overflow-x-auto scrollbar-hide no-scrollbar">
                     <button
                         onClick={() => setSelectedModule('all')}
                         className={cn(
-                            "px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all whitespace-nowrap",
+                            "px-4 md:px-6 py-2 md:py-2.5 rounded-lg md:rounded-xl text-[9px] md:text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap",
                             selectedModule === 'all'
-                                ? "bg-primary text-white shadow-lg shadow-primary/20"
-                                : "bg-bg-subtle text-text-tertiary hover:text-text-primary border border-transparent hover:border-border-base"
+                                ? "bg-bg-white text-primary shadow-sm"
+                                : "text-text-tertiary hover:text-text-primary"
                         )}
                     >
-                        All Modules
+                        Index All
                     </button>
                     {modules.map(m => (
                         <button
                             key={m}
                             onClick={() => setSelectedModule(m)}
                             className={cn(
-                                "px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all whitespace-nowrap",
+                                "px-4 md:px-6 py-2 md:py-2.5 rounded-lg md:rounded-xl text-[9px] md:text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap",
                                 selectedModule === m
-                                    ? "bg-primary text-white shadow-lg shadow-primary/20"
-                                    : "bg-bg-subtle text-text-tertiary hover:text-text-primary border border-transparent hover:border-border-base"
+                                    ? "bg-bg-white text-primary shadow-sm"
+                                    : "text-text-tertiary hover:text-text-primary"
                             )}
                         >
-                            Module {m}
+                            Mod {m}
                         </button>
                     ))}
                 </div>
             </div>
 
             {/* Questions Grid */}
-            {isLoading ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-pulse">
-                    {[1, 2, 3, 4].map(i => <div key={i} className="h-48 bg-bg-subtle rounded-3xl"></div>)}
-                </div>
-            ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                {isLoading ? (
+                    [1, 2, 3, 4].map(i => <div key={i} className="h-64 bento-card animate-pulse" />)
+                ) : (
                     <AnimatePresence mode="popLayout">
-                        {filteredQuestions.map((q) => (
+                        {filteredQuestions.map((q, i) => (
                             <motion.div
                                 key={q.id}
                                 layout
-                                initial={{ opacity: 0, scale: 0.98 }}
-                                animate={{ opacity: 1, scale: 1 }}
+                                initial={{ opacity: 0, y: 20 }}
+                                animate={{ opacity: 1, y: 0 }}
                                 exit={{ opacity: 0, scale: 0.95 }}
-                                className="bento-card group flex flex-col justify-between"
+                                transition={{ delay: i * 0.02 }}
+                                className="bento-card group p-0 overflow-hidden border-border-base hover:border-primary/50"
                             >
-                                <div>
-                                    <div className="flex justify-between items-start mb-4">
-                                        <span className="px-3 py-1 bg-primary-subtle text-primary rounded-full text-[10px] font-black uppercase tracking-widest">
-                                            Module {q.module_id}
-                                        </span>
-                                        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                            <button
-                                                onClick={() => openEdit(q)}
-                                                className="p-2 hover:bg-bg-subtle rounded-lg text-text-tertiary hover:text-primary transition-colors"
-                                            >
-                                                <Edit size={16} />
-                                            </button>
-                                            <button
-                                                onClick={() => handleDelete(q.id)}
-                                                className="p-2 hover:bg-red-50 rounded-lg text-text-tertiary hover:text-red-500 transition-colors"
-                                            >
-                                                <Trash2 size={16} />
-                                            </button>
+                                <div className="p-8 pb-4">
+                                    <div className="flex justify-between items-start mb-6">
+                                        <div className="flex gap-2 items-center">
+                                            <span className="badge bg-primary/10 text-primary border-none text-[8px] px-3">Module {q.module_id}</span>
+                                            {q.userId === user?.uid && (
+                                                <span className="badge bg-green-500/10 text-green-500 border-none text-[8px] px-3">Custom Protocol</span>
+                                            )}
                                         </div>
+                                        {q.userId === user?.uid && (
+                                            <div className="flex gap-2">
+                                                <button onClick={() => openEdit(q)} className="btn-icon">
+                                                    <Edit size={16} />
+                                                </button>
+                                                <button onClick={() => handleDelete(q.id)} className="btn-icon hover:text-red-500 hover:bg-red-50">
+                                                    <Trash2 size={16} />
+                                                </button>
+                                            </div>
+                                        )}
                                     </div>
-                                    <h3 className="font-bold text-lg text-text-primary leading-snug">{q.text}</h3>
+                                    <h3 className="font-black text-xl text-text-primary leading-tight tracking-tight mb-6">{q.text}</h3>
+                                </div>
+
+                                <div className="px-8 pb-8 space-y-4">
                                     {q.answer && (
-                                        <div className="mt-4 p-4 bg-bg-subtle rounded-xl text-sm text-text-secondary leading-relaxed border border-border-subtle">
-                                            <span className="text-[10px] font-black uppercase tracking-widest text-text-tertiary block mb-2">Ideal Response</span>
-                                            {q.answer}
+                                        <div className="p-6 bg-bg-subtle rounded-2xl text-sm font-medium text-text-secondary leading-relaxed border border-border-subtle group-hover:bg-bg-white group-hover:border-primary/20 transition-all duration-500 italic">
+                                            <span className="text-[9px] font-black uppercase tracking-widest text-text-tertiary block mb-3 not-italic">Reference Response</span>
+                                            "{q.answer}"
                                         </div>
                                     )}
-                                </div>
-                                <div className="mt-6 flex items-center justify-between text-[10px] font-black text-text-tertiary uppercase tracking-widest">
-                                    <span>ID: #{q.id}</span>
-                                    <span>Ref: FOUN-MATRIX-Q{q.id}</span>
+                                    <div className="flex items-center justify-between pt-4 border-t border-border-subtle opacity-40 group-hover:opacity-100 transition-opacity">
+                                        <span className="text-[9px] font-black uppercase tracking-widest text-text-tertiary">Protocol #{q.id}</span>
+                                        <span className="text-[9px] font-black uppercase tracking-widest text-text-tertiary">{q.userId ? 'USER_DEF' : 'SYS_CORE'}</span>
+                                    </div>
                                 </div>
                             </motion.div>
                         ))}
                     </AnimatePresence>
-                </div>
-            )}
+                )}
+            </div>
 
-            {/* Empty State */}
-            {!isLoading && filteredQuestions.length === 0 && (
-                <div className="py-20 flex flex-col items-center justify-center text-text-tertiary opacity-50">
-                    <Database size={48} className="mb-4" />
-                    <p className="font-medium">No questions found in this index.</p>
-                    <button onClick={handleSync} className="mt-4 text-xs font-black uppercase tracking-widest hover:text-primary transition-colors">
-                        Try Syncing pool?
-                    </button>
-                </div>
-            )}
-
-            {/* Question Modal */}
             <AnimatePresence>
                 {showForm && (
-                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-slate-900/80 backdrop-blur-md" onClick={closeForm}>
+                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-slate-900/90 backdrop-blur-xl" onClick={closeForm}>
                         <motion.div
-                            initial={{ scale: 0.9, opacity: 0, y: 20 }}
+                            initial={{ scale: 0.95, opacity: 0, y: 20 }}
                             animate={{ scale: 1, opacity: 1, y: 0 }}
-                            exit={{ scale: 0.9, opacity: 0, y: 20 }}
-                            className="bg-bg-white rounded-[2.5rem] w-full max-w-2xl overflow-hidden shadow-2xl border border-white/20"
+                            exit={{ scale: 0.95, opacity: 0, y: 20 }}
+                            className="bg-bg-white rounded-[2.5rem] w-full max-w-2xl overflow-hidden shadow-2xl border border-white/10"
                             onClick={e => e.stopPropagation()}
                         >
-                            <div className="p-8 bg-bg-subtle border-b border-border-base flex justify-between items-center">
+                            <div className="p-10 bg-bg-subtle border-b border-border-base flex justify-between items-start">
                                 <div>
-                                    <h3 className="text-xl font-black text-text-primary">{isEditing ? 'Edit Question' : 'Add New Question'}</h3>
-                                    <p className="text-text-secondary text-sm mt-1">Matrix definitions for foundational module.</p>
+                                    <h3 className="text-2xl font-black text-text-primary tracking-tight">{isEditing ? 'Edit Protocol' : 'New Matrix Index'}</h3>
+                                    <p className="text-text-secondary text-sm font-medium mt-1">Define the assessment criteria for this module.</p>
                                 </div>
-                                <button onClick={closeForm} className="btn-icon">
-                                    <X size={20} />
+                                <button onClick={closeForm} className="btn-icon rounded-2xl w-12 h-12">
+                                    <X size={24} />
                                 </button>
                             </div>
-                            <div className="p-8 scrollbar-hide max-h-[70vh] overflow-y-auto">
-                                <form onSubmit={handleSubmit} className="space-y-6">
-                                    <div className="space-y-2">
-                                        <label className="text-[10px] font-black uppercase tracking-widest text-text-tertiary ml-1">Module</label>
-                                        <select
-                                            className="input-field appearance-none"
-                                            value={formData.moduleId}
-                                            onChange={e => setFormData({ ...formData, moduleId: Number(e.target.value) })}
-                                            disabled={isSubmitting}
-                                        >
-                                            {modules.map(m => <option key={m} value={m}>Module {m} - Matrix Pool</option>)}
-                                        </select>
+                            <div className="p-10 max-h-[70vh] overflow-y-auto scrollbar-hide">
+                                <form onSubmit={handleSubmit} className="space-y-8">
+                                    <div className="space-y-3">
+                                        <label className="text-[10px] font-black uppercase tracking-widest text-text-tertiary ml-1">Assessment Module</label>
+                                        <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
+                                            {modules.map(m => (
+                                                <button
+                                                    key={m}
+                                                    type="button"
+                                                    onClick={() => setFormData({ ...formData, moduleId: m })}
+                                                    className={cn(
+                                                        "h-12 rounded-xl text-xs font-black uppercase transition-all",
+                                                        formData.moduleId === m
+                                                            ? "bg-primary text-white shadow-lg shadow-primary/20"
+                                                            : "bg-bg-subtle text-text-tertiary hover:bg-bg-white hover:border-border-base border-2 border-transparent"
+                                                    )}
+                                                >
+                                                    {m}
+                                                </button>
+                                            ))}
+                                        </div>
                                     </div>
-                                    <div className="space-y-2">
-                                        <label className="text-[10px] font-black uppercase tracking-widest text-text-tertiary ml-1">Question Text</label>
+                                    <div className="space-y-3">
+                                        <label className="text-[10px] font-black uppercase tracking-widest text-text-tertiary ml-1">Protocol Content</label>
                                         <textarea
-                                            className="input-field h-32 py-4 resize-none"
-                                            placeholder="Enter the core question..."
+                                            className="input-field h-32 py-5 resize-none text-base font-medium leading-relaxed"
+                                            placeholder="What is the core question or task student needs to address?"
                                             value={formData.text}
                                             onChange={e => setFormData({ ...formData, text: e.target.value })}
                                             required
                                             disabled={isSubmitting}
                                         />
                                     </div>
-                                    <div className="space-y-2">
-                                        <label className="text-[10px] font-black uppercase tracking-widest text-text-tertiary ml-1">Expected Answer / Guidance</label>
+                                    <div className="space-y-3">
+                                        <label className="text-[10px] font-black uppercase tracking-widest text-text-tertiary ml-1">Reference Evaluation Guidance</label>
                                         <textarea
-                                            className="input-field h-40 py-4 resize-none"
-                                            placeholder="Provide the ideal response for grading..."
+                                            className="input-field h-40 py-5 resize-none text-base font-medium leading-relaxed"
+                                            placeholder="Provide the ideal performance metrics or answers..."
                                             value={formData.answer}
                                             onChange={e => setFormData({ ...formData, answer: e.target.value })}
                                             disabled={isSubmitting}
                                         />
                                     </div>
 
-                                    <div className="flex gap-4 pt-4">
+                                    <div className="flex gap-4 pt-6">
                                         <button
                                             type="button"
                                             onClick={closeForm}
-                                            className="btn btn-secondary flex-1 h-14 font-black"
+                                            className="btn btn-secondary flex-1 h-14 text-base"
                                         >
-                                            Cancel
+                                            Discard
                                         </button>
                                         <button
                                             type="submit"
                                             disabled={isSubmitting}
-                                            className="btn btn-primary flex-1 h-14 text-base font-black shadow-lg shadow-primary/20 disabled:opacity-50"
+                                            className="btn btn-primary flex-[2] h-14 text-base shadow-xl"
                                         >
-                                            {isSubmitting ? (
-                                                <Loader2 className="animate-spin" size={20} />
-                                            ) : (isEditing ? 'Save Changes' : 'Publish Question')}
+                                            {isSubmitting ? <Loader2 className="animate-spin" size={20} /> : (isEditing ? 'Update Protocol' : 'Publish Matrix Index')}
                                         </button>
                                     </div>
                                 </form>
