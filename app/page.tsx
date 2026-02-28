@@ -2,12 +2,9 @@
 
 import React, { useState, useEffect } from 'react';
 import {
-  Calendar,
-  BookOpen,
   Search,
   ArrowRight,
   UserPlus,
-  SlidersHorizontal,
   MoreVertical,
   Clock,
   Loader2,
@@ -25,18 +22,20 @@ import type { ScheduledReview } from '@/types';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/AuthProvider';
 import { cn } from '@/lib/utils';
-import { db } from '@/lib/firebase';
-import { doc, onSnapshot } from 'firebase/firestore';
+import Link from 'next/link';
+import { useAssessment } from '@/components/AssessmentSessionProvider';
 
 export default function Dashboard() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
   const [reviews, setReviews] = useState<ScheduledReview[]>([]);
   const [showForm, setShowForm] = useState(false);
-  const [searchTerm, setSearchTerm] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [activeMenu, setActiveMenu] = useState<string | number | null>(null);
+
+  const { startAssessment } = useAssessment();
+
   const [isEditing, setIsEditing] = useState<string | number | null>(null);
   const [formData, setFormData] = useState({
     studentName: '',
@@ -49,23 +48,19 @@ export default function Dashboard() {
       router.push('/login');
     } else if (user) {
       loadReviews();
-
-      // Listen for real-time sync signals
-      const unsubscribe = onSnapshot(doc(db, 'system', 'sync'), () => {
-        loadReviews(true);
-      });
-      return () => unsubscribe();
     }
-  }, [user, authLoading]);
+  }, [user, authLoading, router]);
 
   async function loadReviews(silent = false) {
     if (!silent) setIsLoading(true);
     try {
       const data = await fetchReviews();
       setReviews(data);
-    } catch (error: any) {
+    } catch (error) {
+      console.error('Failed to load dashboard:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Connection failed';
       toast.error('Session Sync Failed', {
-        description: error.message || 'Connection failed. Please ensure the database is accessible.'
+        description: errorMessage + '. Please ensure the database is accessible.'
       });
     } finally {
       setIsLoading(false);
@@ -76,7 +71,7 @@ export default function Dashboard() {
     e.preventDefault();
     setIsSubmitting(true);
 
-    const reviewData: any = {
+    const reviewData: import('@/types').UpdateReviewRequest & { scheduled_at?: string } = {
       student_name: formData.studentName,
       batch: formData.batch,
       module: formData.module,
@@ -93,15 +88,17 @@ export default function Dashboard() {
         setReviews(prev => prev.map(r => r.id === isEditing ? updated : r));
         toast.success('Assessment updated successfully');
       } else {
-        const savedReview = await createReview(reviewData);
+        const savedReview = await createReview(reviewData as import('@/types').CreateReviewRequest);
         setReviews(prev => [savedReview, ...prev]);
         toast.success('Assessment scheduled successfully');
       }
       setShowForm(false);
       setIsEditing(null);
       setFormData({ studentName: '', batch: '', module: 'Module 1' });
-    } catch (err: any) {
-      toast.error(err.message || 'Validation failed. Please check your inputs.');
+    } catch (error) {
+      console.error('Failed to create/update assessment:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Validation failed';
+      toast.error(errorMessage + '. Please check your inputs.');
     } finally {
       setIsSubmitting(false);
     }
@@ -114,8 +111,10 @@ export default function Dashboard() {
       await deleteReview(id);
       setReviews(prev => prev.filter(r => r.id !== id));
       toast.success('Assessment deleted successfully');
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to delete assessment');
+    } catch (error) {
+      console.error('Failed to delete assessment:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Deletion failed';
+      toast.error(errorMessage);
     }
   };
 
@@ -130,13 +129,9 @@ export default function Dashboard() {
     setActiveMenu(null);
   };
 
-  const filteredReviews = reviews.filter(r =>
-    r.studentName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    r.batch?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
 
   const startReview = (review: ScheduledReview) => {
-    router.push(`/reviews/${review.id}`);
+    startAssessment(review);
   };
 
   if (isLoading && reviews.length === 0) {
@@ -164,14 +159,14 @@ export default function Dashboard() {
       >
         <div className="relative z-10 max-w-2xl">
           <div className="flex items-center gap-3 mb-6 flex-wrap">
-            <span className="badge bg-primary text-white border-none px-4 py-2">System Operational</span>
-            <span className="text-white/40 text-[10px] font-black tracking-widest uppercase">Node: BR-CORE-01</span>
+            <span className="badge bg-primary text-white border-none px-4 py-2">All Systems Running</span>
+            <span className="text-white/40 text-[10px] font-black tracking-widest uppercase">Server Status: Active</span>
           </div>
           <h1 className="text-3xl md:text-5xl font-black tracking-tighter leading-tight mb-4">
             Welcome back, <span className="text-primary">{user?.email?.split('@')[0] || 'Admin'}</span>
           </h1>
           <p className="text-white/60 text-base md:text-lg font-medium leading-relaxed mb-8">
-            You have <span className="text-white font-bold">{reviews.filter(r => r.status === 'pending').length} sessions</span> awaiting initialization. Review your terminal protocols and student registries.
+            You have <span className="text-white font-bold">{reviews.filter(r => r.status === 'pending').length} assessments</span> ready to start. Take a look at your upcoming list.
           </p>
           <div className="flex flex-col sm:flex-row flex-wrap gap-4">
             <button
@@ -179,11 +174,7 @@ export default function Dashboard() {
               onClick={() => setShowForm(true)}
             >
               <UserPlus size={20} />
-              New Deployment
-            </button>
-            <button className="btn bg-white/10 hover:bg-white/20 border-white/10 text-white h-12 md:h-14 px-6 md:px-8 text-sm md:text-base backdrop-blur-md w-full sm:w-auto">
-              <SlidersHorizontal size={20} />
-              Matrix Config
+              New Assessment
             </button>
           </div>
         </div>
@@ -197,12 +188,12 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 xl:grid-cols-4 gap-8">
         {/* Statistical Ledger */}
         <div className="xl:col-span-1 space-y-6">
-          <p className="section-title">Statistical Ledger</p>
+          <p className="section-title">Performance Summary</p>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-1 gap-4">
             {[
-              { label: 'Cumulative Index', value: reviews.length, trend: '+12%', icon: LayoutDashboard },
-              { label: 'Active Queue', value: reviews.filter(r => r.status === 'pending').length, trend: 'High', icon: Clock },
-              { label: 'Certified Result', value: reviews.filter(r => r.status === 'completed' || r.status === 'failed').length, trend: '98%', icon: CheckCircle },
+              { label: 'Total Index', value: reviews.length, trend: '+12%', icon: LayoutDashboard },
+              { label: 'Upcoming', value: reviews.filter(r => r.status === 'pending').length, trend: 'High', icon: Clock },
+              { label: 'Completed', value: reviews.filter(r => r.status === 'completed' || r.status === 'failed').length, trend: '98%', icon: CheckCircle },
             ].map((stat, i) => (
               <motion.div
                 key={i}
@@ -222,149 +213,139 @@ export default function Dashboard() {
             ))}
           </div>
 
-          <div className="mt-8">
-            <p className="section-title">Directory Filter</p>
-            <div className="relative group">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-text-tertiary group-focus-within:text-primary transition-colors" size={18} />
-              <input
-                type="text"
-                placeholder="Search student manifest..."
-                className="input-field pl-12 h-14 rounded-2xl"
-                value={searchTerm}
-                onChange={e => setSearchTerm(e.target.value)}
-              />
-            </div>
-          </div>
+        </div>
+      </div>
+
+      {/* Global Registry Map */}
+      <div className="xl:col-span-3">
+        <div className="flex justify-between items-center mb-6">
+          <p className="section-title">Recent Assessments</p>
+          <Link
+            href="/reviews"
+            className="text-[10px] font-black text-primary uppercase tracking-widest flex items-center gap-2 hover:gap-3 transition-all"
+          >
+            View All Registry <ArrowRight size={14} />
+          </Link>
         </div>
 
-        {/* Global Registry Map */}
-        <div className="xl:col-span-3">
-          <div className="flex justify-between items-center mb-6">
-            <p className="section-title">Global Registry Map</p>
-            <div className="text-[10px] font-black text-text-tertiary uppercase tracking-widest flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-green-500" /> Live Feed
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <AnimatePresence mode="popLayout">
-              {filteredReviews.length === 0 ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <AnimatePresence mode="popLayout">
+            {reviews.length === 0 ? (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="col-span-full py-32 bento-card border-dashed border-2 flex flex-col items-center justify-center text-text-tertiary"
+              >
+                <Search size={48} className="mb-4 opacity-10" />
+                <p className="font-bold uppercase tracking-widest text-[10px]">No results found</p>
+              </motion.div>
+            ) : (
+              reviews.slice(0, 4).map((review, i) => (
                 <motion.div
-                  initial={{ opacity: 0, scale: 0.9 }}
+                  layout
+                  key={review.id}
+                  initial={{ opacity: 0, scale: 0.95 }}
                   animate={{ opacity: 1, scale: 1 }}
-                  className="col-span-full py-32 bento-card border-dashed border-2 flex flex-col items-center justify-center text-text-tertiary"
+                  exit={{ opacity: 0, scale: 0.9 }}
+                  transition={{ delay: i * 0.05 }}
+                  className="bento-card group p-0 overflow-hidden border-border-base hover:border-primary/50 flex flex-col h-full"
                 >
-                  <Search size={48} className="mb-4 opacity-10" />
-                  <p className="font-bold uppercase tracking-widest text-[10px]">Zero records found in local cache</p>
+                  <div className="p-6 md:p-8 flex-1">
+                    <div className="flex justify-between items-start mb-6">
+                      <div className="flex gap-4">
+                        <div className="w-14 h-14 bg-bg-subtle text-text-tertiary rounded-[1.25rem] flex items-center justify-center font-black text-xl group-hover:bg-slate-900 group-hover:text-white transition-all duration-500 shadow-inner group-hover:rotate-12 group-hover:scale-110">
+                          {review.studentName?.[0] || '?'}
+                        </div>
+                        <div>
+                          <h3 className="font-black text-xl leading-tight text-text-primary tracking-tight">{review.studentName}</h3>
+                          <div className="flex items-center gap-2 mt-1">
+                            <span className="badge bg-bg-subtle text-text-secondary border-none px-2 py-0.5 lowercase text-[9px]">{review.batch}</span>
+                            <span className="w-1 h-1 rounded-full bg-text-tertiary" />
+                            <span className="text-[10px] font-bold text-text-tertiary uppercase">{review.module}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="relative">
+                        <button
+                          className={cn(
+                            "btn-icon rounded-2xl w-10 h-10 transition-all",
+                            activeMenu === review.id ? "bg-primary text-white" : ""
+                          )}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setActiveMenu(activeMenu === review.id ? null : review.id);
+                          }}
+                        >
+                          <MoreVertical size={18} />
+                        </button>
+
+                        <AnimatePresence>
+                          {activeMenu === review.id && (
+                            <motion.div
+                              initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                              animate={{ opacity: 1, y: 0, scale: 1 }}
+                              exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                              className="absolute right-0 mt-3 w-56 bg-white dark:bg-[#0a0a0a] border border-border-base rounded-2xl shadow-2xl z-50 overflow-hidden py-2"
+                            >
+                              <button onClick={() => openEditModal(review)} className="w-full flex items-center gap-3 px-4 py-3 text-xs font-black uppercase tracking-widest text-text-secondary hover:bg-bg-subtle hover:text-primary transition-all">
+                                <Edit size={16} /> Edit details
+                              </button>
+                              <div className="h-px bg-border-subtle mx-3 my-1" />
+                              <button onClick={() => handleDeleteReview(review.id)} className="w-full flex items-center gap-3 px-4 py-3 text-xs font-black uppercase tracking-widest text-red-500 hover:bg-red-50 transition-all">
+                                <Trash2 size={16} /> Delete record
+                              </button>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                      </div>
+                    </div>
+
+                    <div className="h-px bg-border-subtle mb-6" />
+
+                    <div className="flex justify-between items-center bg-bg-subtle/50 p-4 rounded-2xl border border-border-subtle">
+                      <div className="space-y-1">
+                        <p className="text-[9px] font-black text-text-tertiary uppercase tracking-widest leading-none">Current Status</p>
+                        <span className={cn(
+                          "badge px-0 bg-transparent border-none text-[10px] font-black uppercase tracking-widest",
+                          review.status === 'completed' ? 'text-green-500' :
+                            review.status === 'failed' ? 'text-red-500' : 'text-amber-500'
+                        )}>
+                          {review.status === 'pending' ? 'READY' : review.status}
+                        </span>
+                      </div>
+                      <div className="text-right space-y-1">
+                        <p className="text-[9px] font-black text-text-tertiary uppercase tracking-widest leading-none">Timestamp</p>
+                        <p className="text-[10px] font-bold text-text-secondary">
+                          {new Date(review.scheduledAt || "").toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="px-8 pb-8">
+                    {review.status === 'pending' ? (
+                      <button
+                        onClick={() => startReview(review)}
+                        className="btn btn-primary w-full h-14 bg-slate-900 group-hover:bg-primary transition-all duration-300 text-white font-black uppercase tracking-widest text-xs shadow-none group-hover:shadow-xl group-hover:shadow-primary/30"
+                      >
+                        Start Assessment
+                        <ArrowRight size={18} className="transition-transform group-hover:translate-x-1" />
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => startReview(review)}
+                        className="btn btn-secondary w-full h-14 bg-bg-subtle/30 border-dashed border-2 hover:border-primary/30 text-text-tertiary font-black uppercase tracking-widest text-xs"
+                      >
+                        View Results
+                        <ExternalLink size={16} />
+                      </button>
+                    )}
+                  </div>
                 </motion.div>
-              ) : (
-                filteredReviews.map((review, i) => (
-                  <motion.div
-                    layout
-                    key={review.id}
-                    initial={{ opacity: 0, scale: 0.95 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.9 }}
-                    transition={{ delay: i * 0.05 }}
-                    className="bento-card group p-0 overflow-hidden border-border-base hover:border-primary/50 flex flex-col h-full"
-                  >
-                    <div className="p-6 md:p-8 flex-1">
-                      <div className="flex justify-between items-start mb-6">
-                        <div className="flex gap-4">
-                          <div className="w-14 h-14 bg-bg-subtle text-text-tertiary rounded-[1.25rem] flex items-center justify-center font-black text-xl group-hover:bg-slate-900 group-hover:text-white transition-all duration-500 shadow-inner group-hover:rotate-12 group-hover:scale-110">
-                            {review.studentName?.[0] || '?'}
-                          </div>
-                          <div>
-                            <h3 className="font-black text-xl leading-tight text-text-primary tracking-tight">{review.studentName}</h3>
-                            <div className="flex items-center gap-2 mt-1">
-                              <span className="badge bg-bg-subtle text-text-secondary border-none px-2 py-0.5 lowercase text-[9px]">{review.batch}</span>
-                              <span className="w-1 h-1 rounded-full bg-text-tertiary" />
-                              <span className="text-[10px] font-bold text-text-tertiary uppercase">{review.module}</span>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="relative">
-                          <button
-                            className={cn(
-                              "btn-icon rounded-2xl w-10 h-10 transition-all",
-                              activeMenu === review.id ? "bg-primary text-white" : ""
-                            )}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setActiveMenu(activeMenu === review.id ? null : review.id);
-                            }}
-                          >
-                            <MoreVertical size={18} />
-                          </button>
-
-                          <AnimatePresence>
-                            {activeMenu === review.id && (
-                              <motion.div
-                                initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                                animate={{ opacity: 1, y: 0, scale: 1 }}
-                                exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                                className="absolute right-0 mt-3 w-56 bg-white dark:bg-[#0a0a0a] border border-border-base rounded-2xl shadow-2xl z-50 overflow-hidden py-2"
-                              >
-                                <button onClick={() => openEditModal(review)} className="w-full flex items-center gap-3 px-4 py-3 text-xs font-black uppercase tracking-widest text-text-secondary hover:bg-bg-subtle hover:text-primary transition-all">
-                                  <Edit size={16} /> Edit manifest
-                                </button>
-                                <div className="h-px bg-border-subtle mx-3 my-1" />
-                                <button onClick={() => handleDeleteReview(review.id)} className="w-full flex items-center gap-3 px-4 py-3 text-xs font-black uppercase tracking-widest text-red-500 hover:bg-red-50 transition-all">
-                                  <Trash2 size={16} /> Purge record
-                                </button>
-                              </motion.div>
-                            )}
-                          </AnimatePresence>
-                        </div>
-                      </div>
-
-                      <div className="h-px bg-border-subtle mb-6" />
-
-                      <div className="flex justify-between items-center bg-bg-subtle/50 p-4 rounded-2xl border border-border-subtle">
-                        <div className="space-y-1">
-                          <p className="text-[9px] font-black text-text-tertiary uppercase tracking-widest leading-none">Status Profile</p>
-                          <span className={cn(
-                            "badge px-0 bg-transparent border-none text-[10px] font-black uppercase tracking-widest",
-                            review.status === 'completed' ? 'text-green-500' :
-                              review.status === 'failed' ? 'text-red-500' : 'text-amber-500'
-                          )}>
-                            {review.status === 'pending' ? 'READY FOR OPS' : review.status}
-                          </span>
-                        </div>
-                        <div className="text-right space-y-1">
-                          <p className="text-[9px] font-black text-text-tertiary uppercase tracking-widest leading-none">Timestamp</p>
-                          <p className="text-[10px] font-bold text-text-secondary">
-                            {new Date(review.scheduledAt || "").toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="px-8 pb-8">
-                      {review.status === 'pending' ? (
-                        <button
-                          onClick={() => startReview(review)}
-                          className="btn btn-primary w-full h-14 bg-slate-900 group-hover:bg-primary transition-all duration-300 text-white font-black uppercase tracking-widest text-xs shadow-none group-hover:shadow-xl group-hover:shadow-primary/30"
-                        >
-                          Initialize session
-                          <ArrowRight size={18} className="transition-transform group-hover:translate-x-1" />
-                        </button>
-                      ) : (
-                        <button
-                          onClick={() => startReview(review)}
-                          className="btn btn-secondary w-full h-14 bg-bg-subtle/30 border-dashed border-2 hover:border-primary/30 text-text-tertiary font-black uppercase tracking-widest text-xs"
-                        >
-                          View archive logs
-                          <ExternalLink size={16} />
-                        </button>
-                      )}
-                    </div>
-                  </motion.div>
-                ))
-              )}
-            </AnimatePresence>
-          </div>
+              ))
+            )}
+          </AnimatePresence>
         </div>
       </div>
 
@@ -386,13 +367,13 @@ export default function Dashboard() {
               onClick={e => e.stopPropagation()}
             >
               <div className="p-8 bg-bg-subtle border-b border-border-base">
-                <h3 className="text-xl font-black text-text-primary">{isEditing ? 'Update Session' : 'Schedule Session'}</h3>
-                <p className="text-text-secondary text-sm mt-1">{isEditing ? 'Modify student assessment details.' : 'Register a new student for assessment.'}</p>
+                <h3 className="text-xl font-black text-text-primary">{isEditing ? 'Update Assessment' : 'New Assessment'}</h3>
+                <p className="text-text-secondary text-sm mt-1">{isEditing ? 'Modify student details.' : 'Register a new student.'}</p>
               </div>
               <div className="p-8">
                 <form onSubmit={handleCreateReview} className="space-y-6">
                   <div className="space-y-2">
-                    <label htmlFor="studentName" className="text-[10px] font-black uppercase tracking-widest text-text-tertiary ml-1">Candidate Nominal</label>
+                    <label htmlFor="studentName" className="text-[10px] font-black uppercase tracking-widest text-text-tertiary ml-1">Student Name</label>
                     <input
                       id="studentName"
                       className="input-field"
@@ -404,7 +385,7 @@ export default function Dashboard() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <label htmlFor="moduleSelect" className="text-[10px] font-black uppercase tracking-widest text-text-tertiary ml-1">Assessment Matrix</label>
+                    <label htmlFor="moduleSelect" className="text-[10px] font-black uppercase tracking-widest text-text-tertiary ml-1">Module</label>
                     <select
                       id="moduleSelect"
                       className="input-field appearance-none"
@@ -412,15 +393,15 @@ export default function Dashboard() {
                       onChange={e => setFormData({ ...formData, module: e.target.value })}
                       disabled={isSubmitting}
                     >
-                      {[1, 2, 3, 4, 5, 6].map(m => <option key={m} value={`Module ${m}`}>Module {m} - Advanced Core</option>)}
+                      {[1, 2, 3, 4, 5, 6].map(m => <option key={m} value={`Module ${m}`}>Module {m}</option>)}
                     </select>
                   </div>
                   <div className="space-y-2">
-                    <label htmlFor="batchCode" className="text-[10px] font-black uppercase tracking-widest text-text-tertiary ml-1">Batch Reference</label>
+                    <label htmlFor="batchCode" className="text-[10px] font-black uppercase tracking-widest text-text-tertiary ml-1">Batch Name</label>
                     <input
                       id="batchCode"
                       className="input-field"
-                      placeholder="e.g. BR-2026"
+                      placeholder="e.g. Batch 2026"
                       value={formData.batch}
                       onChange={e => setFormData({ ...formData, batch: e.target.value })}
                       required
@@ -435,9 +416,9 @@ export default function Dashboard() {
                     {isSubmitting ? (
                       <>
                         <Loader2 className="animate-spin" size={20} />
-                        {isEditing ? 'Updating Record...' : 'Deploying Session...'}
+                        {isEditing ? 'Updating...' : 'Registering...'}
                       </>
-                    ) : (isEditing ? 'Save Changes' : 'Register & Schedule')}
+                    ) : (isEditing ? 'Save Changes' : 'Schedule Assessment')}
                   </button>
                 </form>
               </div>

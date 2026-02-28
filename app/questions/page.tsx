@@ -1,5 +1,4 @@
 "use client";
-
 import React, { useState, useEffect } from 'react';
 import {
     Plus,
@@ -9,7 +8,6 @@ import {
     Database,
     Loader2,
     X,
-    LogOut,
     User as UserIcon,
     BookOpen
 } from 'lucide-react';
@@ -18,9 +16,6 @@ import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/components/AuthProvider';
 import { useRouter } from 'next/navigation';
-import { signOut } from 'firebase/auth';
-import { auth, db } from '@/lib/firebase';
-import { doc, onSnapshot } from 'firebase/firestore';
 
 interface Question {
     id: number;
@@ -47,30 +42,13 @@ export default function QuestionPoolPage() {
         answer: ''
     });
 
-    useEffect(() => {
-        if (!authLoading && !user) {
-            router.push('/login');
-        } else if (user) {
-            fetchQuestions();
-
-            // Listen for real-time sync signals
-            const unsubscribe = onSnapshot(doc(db, 'system', 'sync'), () => {
-                fetchQuestions(true);
-            });
-            return () => unsubscribe();
-        }
-    }, [user, authLoading]);
-
-    const getHeaders = async (): Promise<HeadersInit> => {
-        if (!user) return {};
-        const token = await user.getIdToken();
+    const getHeaders = React.useCallback(async (): Promise<HeadersInit> => {
         return {
-            'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json'
         };
-    };
+    }, []);
 
-    const fetchQuestions = async (silent = false) => {
+    const fetchQuestions = React.useCallback(async (silent = false) => {
         if (!silent) setIsLoading(true);
         try {
             const headers = await getHeaders();
@@ -84,14 +62,23 @@ export default function QuestionPoolPage() {
 
             const data = await res.json();
             setQuestions(data);
-        } catch (error: any) {
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : 'Check your database handshake';
             toast.error('Repository Error', {
-                description: error.message || 'Check your database handshake'
+                description: errorMessage
             });
         } finally {
             setIsLoading(false);
         }
-    };
+    }, [getHeaders]);
+
+    useEffect(() => {
+        if (!authLoading && !user) {
+            router.push('/login');
+        } else if (user) {
+            fetchQuestions();
+        }
+    }, [user, authLoading, router, fetchQuestions]);
 
     const handleSync = async () => {
         const confirmSync = window.confirm("This will import initial questions from the system pool. Continue?");
@@ -111,7 +98,7 @@ export default function QuestionPoolPage() {
             } else {
                 toast.error(data.error || 'Sync failed');
             }
-        } catch (error) {
+        } catch {
             toast.error('Sync failed');
         } finally {
             toast.dismiss();
@@ -128,13 +115,13 @@ export default function QuestionPoolPage() {
                 headers
             });
             if (res.ok) {
-                setQuestions(prev => prev.filter(q => q.id !== id));
+                setQuestions((prev: Question[]) => prev.filter((q: Question) => q.id !== id));
                 toast.success('Question removed');
             } else {
                 const data = await res.json();
                 toast.error(data.error || 'Failed to delete');
             }
-        } catch (error) {
+        } catch {
             toast.error('Connection error');
         }
     };
@@ -166,18 +153,13 @@ export default function QuestionPoolPage() {
             } else {
                 toast.error(data.error || 'Operation failed');
             }
-        } catch (error) {
+        } catch {
             toast.error('Connection error');
         } finally {
             setIsSubmitting(false);
         }
     };
 
-    const handleLogout = async () => {
-        await signOut(auth);
-        router.push('/login');
-        toast.success('Logged out');
-    };
 
     const openEdit = (question: Question) => {
         setIsEditing(question.id);
@@ -230,8 +212,8 @@ export default function QuestionPoolPage() {
                     </div>
                     <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-8">
                         <div>
-                            <h1 className="text-3xl md:text-5xl font-black tracking-tighter leading-tight mb-2">Theoretical Matrix</h1>
-                            <p className="text-white/60 text-base md:text-lg font-medium">Configure and synchronize the foundational assessment question bank.</p>
+                            <h1 className="text-3xl md:text-5xl font-black tracking-tighter leading-tight mb-2">Question Bank</h1>
+                            <p className="text-white/60 text-base md:text-lg font-medium">Manage and organize your assessment questions here.</p>
                         </div>
                         <div className="flex gap-3 w-full md:w-auto">
                             <button
@@ -239,14 +221,14 @@ export default function QuestionPoolPage() {
                                 className="btn bg-white/10 hover:bg-white/20 border-white/10 text-white h-12 md:h-14 px-4 md:px-8 text-sm md:text-base backdrop-blur-md flex-1 md:flex-none"
                             >
                                 <Database size={18} />
-                                Sync Pool
+                                Refresh
                             </button>
                             <button
                                 onClick={() => setShowForm(true)}
                                 className="btn btn-primary h-12 md:h-14 px-4 md:px-8 text-sm md:text-base shadow-xl flex-1 md:flex-none"
                             >
                                 <Plus size={18} />
-                                Create Index
+                                Add Question
                             </button>
                         </div>
                     </div>
@@ -263,7 +245,7 @@ export default function QuestionPoolPage() {
                     <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-text-tertiary group-focus-within:text-primary transition-colors" size={20} />
                     <input
                         type="text"
-                        placeholder="Search matrix protocols..."
+                        placeholder="Search all questions..."
                         className="w-full h-12 md:h-14 pl-14 pr-6 bg-transparent text-sm font-bold text-text-primary outline-none placeholder:text-text-tertiary"
                         value={searchTerm}
                         onChange={e => setSearchTerm(e.target.value)}
@@ -279,7 +261,7 @@ export default function QuestionPoolPage() {
                                 : "text-text-tertiary hover:text-text-primary"
                         )}
                     >
-                        Index All
+                        Show All
                     </button>
                     {modules.map(m => (
                         <button
@@ -304,7 +286,7 @@ export default function QuestionPoolPage() {
                     [1, 2, 3, 4].map(i => <div key={i} className="h-64 bento-card animate-pulse" />)
                 ) : (
                     <AnimatePresence mode="popLayout">
-                        {filteredQuestions.map((q, i) => (
+                        {filteredQuestions.map((q: Question, i: number) => (
                             <motion.div
                                 key={q.id}
                                 layout
@@ -319,7 +301,7 @@ export default function QuestionPoolPage() {
                                         <div className="flex gap-2 items-center">
                                             <span className="badge bg-primary/10 text-primary border-none text-[8px] px-3">Module {q.module_id}</span>
                                             {q.userId === user?.uid && (
-                                                <span className="badge bg-green-500/10 text-green-500 border-none text-[8px] px-3">Custom Protocol</span>
+                                                <span className="badge bg-green-500/10 text-green-500 border-none text-[8px] px-3">My Question</span>
                                             )}
                                         </div>
                                         {q.userId === user?.uid && (
@@ -339,12 +321,12 @@ export default function QuestionPoolPage() {
                                 <div className="px-8 pb-8 space-y-4">
                                     {q.answer && (
                                         <div className="p-6 bg-bg-subtle rounded-2xl text-sm font-medium text-text-secondary leading-relaxed border border-border-subtle group-hover:bg-bg-white group-hover:border-primary/20 transition-all duration-500 italic">
-                                            <span className="text-[9px] font-black uppercase tracking-widest text-text-tertiary block mb-3 not-italic">Reference Response</span>
-                                            "{q.answer}"
+                                            <span className="text-[9px] font-black uppercase tracking-widest text-text-tertiary block mb-3 not-italic">Ideal Answer</span>
+                                            &quot;{q.answer}&quot;
                                         </div>
                                     )}
                                     <div className="flex items-center justify-between pt-4 border-t border-border-subtle opacity-40 group-hover:opacity-100 transition-opacity">
-                                        <span className="text-[9px] font-black uppercase tracking-widest text-text-tertiary">Protocol #{q.id}</span>
+                                        <span className="text-[9px] font-black uppercase tracking-widest text-text-tertiary">Question #{q.id}</span>
                                         <span className="text-[9px] font-black uppercase tracking-widest text-text-tertiary">{q.userId ? 'USER_DEF' : 'SYS_CORE'}</span>
                                     </div>
                                 </div>
@@ -366,8 +348,8 @@ export default function QuestionPoolPage() {
                         >
                             <div className="p-10 bg-bg-subtle border-b border-border-base flex justify-between items-start">
                                 <div>
-                                    <h3 className="text-2xl font-black text-text-primary tracking-tight">{isEditing ? 'Edit Protocol' : 'New Matrix Index'}</h3>
-                                    <p className="text-text-secondary text-sm font-medium mt-1">Define the assessment criteria for this module.</p>
+                                    <h3 className="text-2xl font-black text-text-primary tracking-tight">{isEditing ? 'Edit Question' : 'Add Question'}</h3>
+                                    <p className="text-text-secondary text-sm font-medium mt-1">Set the question and guidance for this module.</p>
                                 </div>
                                 <button onClick={closeForm} className="btn-icon rounded-2xl w-12 h-12">
                                     <X size={24} />
@@ -396,7 +378,7 @@ export default function QuestionPoolPage() {
                                         </div>
                                     </div>
                                     <div className="space-y-3">
-                                        <label className="text-[10px] font-black uppercase tracking-widest text-text-tertiary ml-1">Protocol Content</label>
+                                        <label className="text-[10px] font-black uppercase tracking-widest text-text-tertiary ml-1">Question Text</label>
                                         <textarea
                                             className="input-field h-32 py-5 resize-none text-base font-medium leading-relaxed"
                                             placeholder="What is the core question or task student needs to address?"
@@ -407,7 +389,7 @@ export default function QuestionPoolPage() {
                                         />
                                     </div>
                                     <div className="space-y-3">
-                                        <label className="text-[10px] font-black uppercase tracking-widest text-text-tertiary ml-1">Reference Evaluation Guidance</label>
+                                        <label className="text-[10px] font-black uppercase tracking-widest text-text-tertiary ml-1">Answer Guidance</label>
                                         <textarea
                                             className="input-field h-40 py-5 resize-none text-base font-medium leading-relaxed"
                                             placeholder="Provide the ideal performance metrics or answers..."
@@ -430,7 +412,7 @@ export default function QuestionPoolPage() {
                                             disabled={isSubmitting}
                                             className="btn btn-primary flex-[2] h-14 text-base shadow-xl"
                                         >
-                                            {isSubmitting ? <Loader2 className="animate-spin" size={20} /> : (isEditing ? 'Update Protocol' : 'Publish Matrix Index')}
+                                            {isSubmitting ? <Loader2 className="animate-spin" size={20} /> : (isEditing ? 'Update Question' : 'Save Question')}
                                         </button>
                                     </div>
                                 </form>

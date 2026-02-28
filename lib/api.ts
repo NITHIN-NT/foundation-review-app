@@ -1,18 +1,11 @@
 import type { ScheduledReview, CreateReviewRequest, UpdateReviewRequest } from '@/types';
-import { auth } from '@/lib/firebase';
 
 export const API_URL = process.env.NEXT_PUBLIC_API_URL || '/api';
 
 async function getAuthHeaders(): Promise<HeadersInit> {
-    const user = auth.currentUser;
-    const headers: Record<string, string> = {
+    return {
         'Content-Type': 'application/json'
     };
-    if (user) {
-        const token = await user.getIdToken();
-        headers['Authorization'] = `Bearer ${token}`;
-    }
-    return headers;
 }
 
 async function handleResponse(response: Response) {
@@ -24,7 +17,7 @@ async function handleResponse(response: Response) {
         } else {
             const text = await response.text();
             console.error('Non-JSON Error Response:', text.slice(0, 200));
-            throw new Error(`Server Error (${response.status}): The server returned an unexpected response. Please check terminal logs.`);
+            throw new Error(`Server Error (${response.status}): The server returned an unexpected response. Please try again later.`);
         }
     }
 

@@ -6,19 +6,15 @@ import { usePathname } from 'next/navigation';
 import {
     LayoutDashboard,
     BookOpen,
-    Settings,
     ChevronLeft,
     Terminal,
     ClipboardList,
-    LogOut,
-    HelpCircle
+    LogOut
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 
 import { useAuth } from '@/components/AuthProvider';
-import { signOut } from 'firebase/auth';
-import { auth } from '@/lib/firebase';
 import { LogIn } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
@@ -37,23 +33,15 @@ const Sidebar: React.FC<SidebarProps> = ({ isMobileOpen, onCloseMobile }) => {
     const navItems = [
         { icon: LayoutDashboard, label: 'Dashboard', href: '/' },
         { icon: BookOpen, label: 'Reviews', href: '/reviews' },
-        { icon: ClipboardList, label: 'Question Pool', href: '/questions' },
+        { icon: ClipboardList, label: 'Questions', href: '/questions' },
     ];
 
-    const footerItems = [
-        { icon: HelpCircle, label: 'Help & Docs', href: '/help' },
-        { icon: Settings, label: 'Settings', href: '/settings' },
-    ];
 
-    const handleLogout = async () => {
-        try {
-            await signOut(auth);
-            router.push('/login');
-            toast.success('Logged out successfully');
-            onCloseMobile?.();
-        } catch (error) {
-            toast.error('Logout failed');
-        }
+    const handleLogout = () => {
+        localStorage.removeItem('auth_pin_verified');
+        router.push('/login');
+        toast.success('Logged out successfully');
+        onCloseMobile?.();
     };
 
     return (
@@ -141,27 +129,6 @@ const Sidebar: React.FC<SidebarProps> = ({ isMobileOpen, onCloseMobile }) => {
                         </nav>
                     </div>
 
-                    <div>
-                        {(!isCollapsed || isMobileOpen) && <p className="section-title px-4">System</p>}
-                        <nav className="space-y-1.5">
-                            {footerItems.map((item) => (
-                                <Link
-                                    key={item.href}
-                                    href={item.href}
-                                    onClick={() => onCloseMobile?.()}
-                                    className={cn(
-                                        "flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-bold transition-all duration-300",
-                                        pathname === item.href
-                                            ? "bg-primary text-white shadow-lg shadow-primary/20"
-                                            : "text-text-secondary hover:bg-bg-subtle hover:text-text-primary group-hover:bg-bg-subtle"
-                                    )}
-                                >
-                                    <item.icon size={20} />
-                                    {(!isCollapsed || isMobileOpen) && <span className={cn(pathname !== item.href && "text-text-primary/70 md:text-text-secondary group-hover:text-text-primary")}>{item.label}</span>}
-                                </Link>
-                            ))}
-                        </nav>
-                    </div>
                 </div>
 
                 <div className="p-4 mt-auto border-t border-border-base pt-6 pb-8 space-y-4">
@@ -171,7 +138,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isMobileOpen, onCloseMobile }) => {
                                 <div className="w-2 h-2 bg-indigo-500 rounded-full animate-ping absolute inset-0" />
                                 <div className="w-2 h-2 bg-indigo-500 rounded-full relative z-10" />
                             </div>
-                            <span className="text-[9px] font-black uppercase tracking-[0.2em] text-indigo-500/60">System Operational</span>
+                            <span className="text-[9px] font-black uppercase tracking-[0.2em] text-indigo-500/60">System Ready</span>
                         </div>
                     )}
                     {user ? (
@@ -198,7 +165,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isMobileOpen, onCloseMobile }) => {
                                 )}
                             >
                                 <LogOut size={18} />
-                                {(!isCollapsed || isMobileOpen) && <span>End Session</span>}
+                                {(!isCollapsed || isMobileOpen) && <span>Log Out</span>}
                             </button>
                         </div>
                     ) : (
@@ -208,7 +175,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isMobileOpen, onCloseMobile }) => {
                             className="btn btn-primary w-full"
                         >
                             <LogIn size={18} />
-                            {(!isCollapsed || isMobileOpen) && <span>Initialize</span>}
+                            {(!isCollapsed || isMobileOpen) && <span>Sign In</span>}
                         </Link>
                     )}
                 </div>

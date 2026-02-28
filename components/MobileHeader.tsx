@@ -2,7 +2,6 @@
 
 import React from 'react';
 import { Menu, Terminal } from 'lucide-react';
-import { motion } from 'framer-motion';
 
 interface MobileHeaderProps {
     onOpenSidebar: () => void;

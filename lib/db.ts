@@ -1,6 +1,6 @@
 import postgres from 'postgres';
 
-const globalForSql = global as unknown as { sql: postgres.Sql<{}> };
+const globalForSql = global as unknown as { sql: postgres.Sql<Record<string, unknown>> };
 
 const sql = globalForSql.sql || postgres(process.env.DATABASE_URL!, {
     ssl: { rejectUnauthorized: false },
@@ -13,3 +13,5 @@ const sql = globalForSql.sql || postgres(process.env.DATABASE_URL!, {
 if (process.env.NODE_ENV !== 'production') globalForSql.sql = sql;
 
 export default sql;
+
+export type DBRow = Record<string, unknown>;

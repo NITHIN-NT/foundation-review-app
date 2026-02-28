@@ -3,10 +3,9 @@ import sql from '@/lib/db';
 import { reviewSchema } from '@/lib/validations';
 import { ZodError } from 'zod';
 import { getAuthUser } from '@/lib/auth-server';
-import { triggerGlobalSync } from '@/lib/realtime';
 
-export async function GET(request: Request) {
-  const user = await getAuthUser(request);
+export async function GET() {
+  const user = await getAuthUser();
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
@@ -30,21 +29,18 @@ export async function GET(request: Request) {
     `;
     console.log(`API: GET /api/reviews - Successfully fetched ${reviews.length} reviews`);
     return NextResponse.json(reviews);
-  } catch (error: any) {
-    console.error('API: Database Error details:', {
-      message: error.message,
-      code: error.code,
-      stack: error.stack
-    });
+  } catch (error) {
+    console.error('API: Reviews Database Error:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown database error';
     return NextResponse.json({
       error: 'Internal Server Error',
-      details: error.message
+      details: errorMessage
     }, { status: 500 });
   }
 }
 
 export async function POST(request: Request) {
-  const user = await getAuthUser(request);
+  const user = await getAuthUser();
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
@@ -83,7 +79,6 @@ export async function POST(request: Request) {
         scheduled_at as "scheduledAt"
     `;
 
-    await triggerGlobalSync();
     return NextResponse.json(newReview, { status: 201 });
   } catch (error) {
     if (error instanceof ZodError) {

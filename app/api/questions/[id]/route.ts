@@ -2,7 +2,6 @@ import { NextResponse } from 'next/server';
 import sql from '@/lib/db';
 import { z } from 'zod';
 import { getAuthUser } from '@/lib/auth-server';
-import { triggerGlobalSync } from '@/lib/realtime';
 
 const patchQuestionSchema = z.object({
     text: z.string().min(1).optional(),
@@ -14,7 +13,7 @@ export async function GET(
     request: Request,
     { params }: { params: Promise<{ id: string }> }
 ) {
-    const user = await getAuthUser(request);
+    const user = await getAuthUser();
     if (!user) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
@@ -42,7 +41,7 @@ export async function PATCH(
     request: Request,
     { params }: { params: Promise<{ id: string }> }
 ) {
-    const user = await getAuthUser(request);
+    const user = await getAuthUser();
     if (!user) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
@@ -67,7 +66,7 @@ export async function PATCH(
             return NextResponse.json({ error: 'Question not found or permission denied' }, { status: 404 });
         }
 
-        await triggerGlobalSync();
+
         return NextResponse.json(updatedQuestion);
     } catch (error) {
         if (error instanceof z.ZodError) {
@@ -82,7 +81,7 @@ export async function DELETE(
     request: Request,
     { params }: { params: Promise<{ id: string }> }
 ) {
-    const user = await getAuthUser(request);
+    const user = await getAuthUser();
     if (!user) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
@@ -99,7 +98,7 @@ export async function DELETE(
             return NextResponse.json({ error: 'Question not found or permission denied' }, { status: 404 });
         }
 
-        await triggerGlobalSync();
+
         return NextResponse.json({ message: 'Question deleted successfully' });
     } catch (error) {
         console.error('Database Error:', error);

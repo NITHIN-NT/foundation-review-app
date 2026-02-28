@@ -22,7 +22,7 @@ export default function Error({
             <div>
                 <h2 className="text-2xl font-black text-text-primary tracking-tight">Something went wrong</h2>
                 <p className="text-text-tertiary mt-2 max-w-md mx-auto">
-                    The system encountered an unexpected error during the process. Our technicians have been notified.
+                    We hit a small snag. Please try again or head back to the dashboard.
                 </p>
             </div>
             <button
@@ -30,7 +30,7 @@ export default function Error({
                 className="btn btn-primary h-14 px-8 shadow-lg shadow-primary/20"
             >
                 <RotateCcw size={20} />
-                Retry Operation
+                Try Again
             </button>
         </div>
     );

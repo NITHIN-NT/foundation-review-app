@@ -1,52 +1,75 @@
 "use client";
 
-import React, { useState } from 'react';
-import { auth } from '@/lib/firebase';
-import {
-    signInWithEmailAndPassword,
-    createUserWithEmailAndPassword,
-    signInWithPopup,
-    GoogleAuthProvider
-} from 'firebase/auth';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
-import { LogIn, Chrome, Loader2 } from 'lucide-react';
+import { ShieldCheck, Loader2, Lock } from 'lucide-react';
+import { REQUIRED_PIN } from '@/lib/constants';
+import { useAuth } from '@/components/AuthProvider';
 
 export default function LoginPage() {
-    const [isLogin, setIsLogin] = useState(true);
-    const [email, setEmail] = useState('');
-    const [password, setPassword] = useState('');
+    const { loginViaPin } = useAuth();
+    const [pin, setPin] = useState(['', '', '', '', '', '']);
     const [isLoading, setIsLoading] = useState(false);
+    const [error, setError] = useState(false);
     const router = useRouter();
+    const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
-        setIsLoading(true);
-        try {
-            if (isLogin) {
-                await signInWithEmailAndPassword(auth, email, password);
-                toast.success('Welcome back!');
-            } else {
-                await createUserWithEmailAndPassword(auth, email, password);
-                toast.success('Account created successfully!');
-            }
+    // Check if already authenticated
+    useEffect(() => {
+        const isVerified = localStorage.getItem('auth_pin_verified') === 'true';
+        if (isVerified) {
             router.push('/');
-        } catch (error: any) {
-            toast.error(error.message);
-        } finally {
-            setIsLoading(false);
+        }
+    }, [router]);
+
+    const handleVerify = useCallback(async () => {
+        const enteredPin = pin.join('');
+        if (enteredPin === REQUIRED_PIN) {
+            setIsLoading(true);
+            setError(false);
+            try {
+                // PIN gate success - trigger local session
+                loginViaPin();
+                toast.success('Access Granted');
+                router.push('/');
+            } catch (error) {
+                console.error('Session Error:', error);
+                toast.error('Local Synchronization Failed');
+            } finally {
+                setIsLoading(false);
+            }
+        } else {
+            setError(true);
+            setPin(['', '', '', '', '', '']);
+            inputRefs.current[0]?.focus();
+            toast.error('Invalid Protocol Key');
+            setTimeout(() => setError(false), 500);
+        }
+    }, [pin, router, loginViaPin]);
+
+    useEffect(() => {
+        if (pin.every(digit => digit !== '')) {
+            handleVerify();
+        }
+    }, [pin, handleVerify]);
+
+    const handleChange = (index: number, value: string) => {
+        if (isNaN(Number(value))) return;
+
+        const newPin = [...pin];
+        newPin[index] = value.substring(value.length - 1);
+        setPin(newPin);
+
+        if (value && index < 5) {
+            inputRefs.current[index + 1]?.focus();
         }
     };
 
-    const handleGoogleSignIn = async () => {
-        const provider = new GoogleAuthProvider();
-        try {
-            await signInWithPopup(auth, provider);
-            toast.success('Welcome!');
-            router.push('/');
-        } catch (error: any) {
-            toast.error(error.message);
+    const handleKeyDown = (index: number, e: React.KeyboardEvent) => {
+        if (e.key === 'Backspace' && !pin[index] && index > 0) {
+            inputRefs.current[index - 1]?.focus();
         }
     };
 
@@ -61,96 +84,51 @@ export default function LoginPage() {
             <div className="absolute inset-0 bg-[linear-gradient(to_right,#ffffff05_1px,transparent_1px),linear-gradient(to_bottom,#ffffff05_1px,transparent_1px)] bg-[size:40px_40px] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_0%,#000_70%,transparent_100%)]" />
 
             <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
                 className="w-full max-w-lg relative z-10"
             >
-                <div className="glass-dark rounded-[2rem] md:rounded-[3rem] overflow-hidden shadow-2xl border border-white/5">
-                    <div className="p-6 md:p-12 pb-4 md:pb-6 text-center">
-                        <motion.div
-                            initial={{ scale: 0.5 }}
-                            animate={{ scale: 1 }}
-                            className="w-16 h-16 md:w-20 md:h-20 bg-primary/20 text-primary rounded-[1.5rem] md:rounded-[2rem] flex items-center justify-center mx-auto mb-6 md:mb-8 shadow-inner border border-primary/20"
-                        >
-                            <LogIn size={32} className="md:size-[40px] drop-shadow-[0_0_10px_rgba(139,92,246,0.5)]" />
-                        </motion.div>
-                        <h1 className="text-3xl md:text-4xl font-black tracking-tighter text-white mb-3">
-                            {isLogin ? 'Protocol: Access' : 'Protocol: Initialize'}
-                        </h1>
-                        <p className="text-white/40 text-[9px] md:text-sm font-bold uppercase tracking-[0.2em]">
-                            Foundational Matrix Interface
-                        </p>
-                    </div>
+                <div className="glass-dark rounded-[3rem] overflow-hidden shadow-2xl border border-white/5 p-8 md:p-14 text-center">
+                    <motion.div
+                        animate={error ? { x: [-10, 10, -10, 10, 0] } : {}}
+                        className="w-20 h-20 bg-primary/20 text-primary rounded-[2rem] flex items-center justify-center mx-auto mb-10 shadow-inner border border-primary/20"
+                    >
+                        {isLoading ? (
+                            <Loader2 className="animate-spin" size={32} />
+                        ) : error ? (
+                            <Lock size={32} className="text-red-500" />
+                        ) : (
+                            <ShieldCheck size={32} className="drop-shadow-[0_0_10px_rgba(139,92,246,0.5)]" />
+                        )}
+                    </motion.div>
 
-                    <div className="p-6 md:p-12 pt-0 md:pt-6">
-                        <form onSubmit={handleSubmit} className="space-y-6">
-                            <div className="space-y-3">
-                                <label className="text-[10px] font-black uppercase tracking-[0.2em] text-white/30 ml-1">Identity Vector</label>
-                                <input
-                                    type="email"
-                                    className="w-full h-14 px-6 bg-white/5 border border-white/10 rounded-2xl text-white outline-none focus:bg-white/10 focus:border-primary/50 transition-all placeholder:text-white/10"
-                                    placeholder="Enter your email"
-                                    value={email}
-                                    onChange={(e) => setEmail(e.target.value)}
-                                    required
-                                />
-                            </div>
-                            <div className="space-y-3">
-                                <label className="text-[10px] font-black uppercase tracking-[0.2em] text-white/30 ml-1">Secure Keyphrase</label>
-                                <input
-                                    type="password"
-                                    className="w-full h-14 px-6 bg-white/5 border border-white/10 rounded-2xl text-white outline-none focus:bg-white/10 focus:border-primary/50 transition-all placeholder:text-white/10"
-                                    placeholder="••••••••"
-                                    value={password}
-                                    onChange={(e) => setPassword(e.target.value)}
-                                    required
-                                />
-                            </div>
+                    <h1 className="text-3xl font-black tracking-tight text-white mb-2">Welcome Back</h1>
+                    <p className="text-white/40 text-xs font-bold uppercase tracking-[0.2em] mb-12">Enter your security PIN to continue</p>
 
-                            <button
-                                type="submit"
+                    <div className="flex justify-center gap-3 mb-10">
+                        {pin.map((digit, index) => (
+                            <input
+                                key={index}
+                                ref={el => { inputRefs.current[index] = el; }}
+                                type="text"
+                                inputMode="numeric"
+                                maxLength={1}
+                                value={digit}
+                                onChange={(e) => handleChange(index, e.target.value)}
+                                onKeyDown={(e) => handleKeyDown(index, e)}
+                                className={`w-12 h-16 md:w-16 md:h-20 bg-white/5 border ${error ? 'border-red-500/50' : 'border-white/10'} rounded-2xl text-center text-2xl font-black text-white outline-none focus:bg-white/10 focus:border-primary/50 transition-all shadow-lg`}
                                 disabled={isLoading}
-                                className="btn btn-primary w-full h-16 text-lg font-black uppercase tracking-widest shadow-[0_0_30px_rgba(139,92,246,0.2)] mt-4"
-                            >
-                                {isLoading ? (
-                                    <Loader2 className="animate-spin" size={24} />
-                                ) : (
-                                    isLogin ? 'Establish Link' : 'Generate Identity'
-                                )}
-                            </button>
-                        </form>
-
-                        <div className="relative my-10">
-                            <div className="absolute inset-0 flex items-center">
-                                <div className="w-full border-t border-white/5"></div>
-                            </div>
-                            <div className="relative flex justify-center text-[10px] font-black uppercase tracking-[0.3em]">
-                                <span className="bg-transparent px-4 text-white/20">External Handshake</span>
-                            </div>
-                        </div>
-
-                        <div className="flex flex-col gap-4">
-                            <button
-                                onClick={handleGoogleSignIn}
-                                className="h-14 w-full rounded-2xl bg-white/5 border border-white/10 text-white/60 hover:bg-white/10 hover:text-white transition-all flex items-center justify-center gap-3 text-xs font-black uppercase tracking-widest"
-                            >
-                                <Chrome size={20} /> Establish Google Handshake
-                            </button>
-                        </div>
-
-                        <div className="mt-10 text-center">
-                            <button
-                                onClick={() => setIsLogin(!isLogin)}
-                                className="text-[10px] font-black uppercase tracking-[0.2em] text-white/40 hover:text-primary transition-colors"
-                            >
-                                {isLogin ? "Need a new identity? Request generation" : "Existing handshake found? Re-establish"}
-                            </button>
-                        </div>
+                            />
+                        ))}
                     </div>
+
+                    <p className="text-white/20 text-[10px] font-black uppercase tracking-[0.3em] h-4">
+                        {isLoading ? 'Verifying PIN...' : error ? 'Access Denied: Incorrect PIN' : 'Enter your 6-digit PIN'}
+                    </p>
                 </div>
 
                 <p className="text-center mt-12 text-white/10 text-[9px] font-bold uppercase tracking-[0.5em]">
-                    Terminal: v1.0.4-LOCKED // Secure Environment
+                    Foundation | Secure Access
                 </p>
             </motion.div>
         </div>

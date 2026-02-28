@@ -22,7 +22,7 @@ export interface ScheduledReview {
     total: number;
   };
   notes?: string;
-  sessionData?: any;
+  session_data?: Record<string, unknown>;
 }
 
 export interface QuestionResult {
@@ -50,13 +50,17 @@ export interface CreateReviewRequest {
 }
 
 export interface UpdateReviewRequest {
-  status: 'completed' | 'failed';
-  scores: {
+  status?: 'pending' | 'active' | 'completed' | 'failed';
+  student_name?: string;
+  batch?: string;
+  module?: string;
+  scores?: {
     theoretical: number;
     maxTheoretical: number;
     practical: number;
     total: number;
   };
   notes?: string;
-  session_data?: any;
+  session_data?: Record<string, unknown>;
+  scheduled_at?: string;
 }

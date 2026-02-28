@@ -3,13 +3,12 @@ import sql from '@/lib/db';
 import { patchReviewSchema } from '@/lib/validations';
 import { ZodError } from 'zod';
 import { getAuthUser } from '@/lib/auth-server';
-import { triggerGlobalSync } from '@/lib/realtime';
 
 export async function GET(
     request: Request,
     { params }: { params: Promise<{ id: string }> }
 ) {
-    const user = await getAuthUser(request);
+    const user = await getAuthUser();
     if (!user) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
@@ -50,7 +49,7 @@ export async function PATCH(
     request: Request,
     { params }: { params: Promise<{ id: string }> }
 ) {
-    const user = await getAuthUser(request);
+    const user = await getAuthUser();
     if (!user) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
@@ -92,7 +91,7 @@ export async function PATCH(
             return NextResponse.json({ error: 'Review not found' }, { status: 404 });
         }
 
-        await triggerGlobalSync();
+
         return NextResponse.json(updatedReview);
     } catch (error) {
         if (error instanceof ZodError) {
@@ -107,7 +106,7 @@ export async function DELETE(
     request: Request,
     { params }: { params: Promise<{ id: string }> }
 ) {
-    const user = await getAuthUser(request);
+    const user = await getAuthUser();
     if (!user) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
@@ -128,7 +127,7 @@ export async function DELETE(
             return NextResponse.json({ error: 'Review not found' }, { status: 404 });
         }
 
-        await triggerGlobalSync();
+
         return NextResponse.json({ message: 'Review deleted successfully' });
     } catch (error) {
         console.error('Database Error:', error);

@@ -13,8 +13,9 @@ export async function GET() {
         // For now, let's keep it nullable so old questions don't break
 
         return NextResponse.json({ message: 'Database updated successfully' });
-    } catch (error: any) {
+    } catch (error) {
         console.error('Setup Error:', error);
-        return NextResponse.json({ error: error.message }, { status: 500 });
+        const errorMessage = error instanceof Error ? error.message : 'Unknown setup error';
+        return NextResponse.json({ error: errorMessage }, { status: 500 });
     }
 }

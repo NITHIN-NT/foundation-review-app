@@ -4,6 +4,8 @@ import "./globals.css";
 import { Toaster } from "sonner";
 import { AuthProvider } from "@/components/AuthProvider";
 import LayoutWrapper from "@/components/LayoutWrapper";
+import { AssessmentSessionProvider } from "@/components/AssessmentSessionProvider";
+import { GlobalAssessmentLoader } from "@/components/GlobalAssessmentLoader";
 
 const jakarta = Plus_Jakarta_Sans({
   subsets: ["latin"],
@@ -29,9 +31,12 @@ export default function RootLayout({
     <html lang="en" className={`${jakarta.variable} ${jetbrains.variable}`}>
       <body className="antialiased bg-bg-main text-text-primary">
         <AuthProvider>
-          <LayoutWrapper>
-            {children}
-          </LayoutWrapper>
+          <AssessmentSessionProvider>
+            <LayoutWrapper>
+              {children}
+            </LayoutWrapper>
+            <GlobalAssessmentLoader />
+          </AssessmentSessionProvider>
           <Toaster position="top-right" richColors />
         </AuthProvider>
       </body>

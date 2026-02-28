@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 :root {
-  /* Core Palette - Luxury Light */
+  /* Core Palette - Luxury Light (Default) */
   --bg-main: #fcfcfd;
   --bg-white: #ffffff;
   --bg-subtle: #f4f4f5;
@@ -17,22 +17,21 @@
   --foreground: var(--text-primary);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    /* Core Palette - Luxury Dark */
-    --bg-main: #050505;
-    --bg-white: #0a0a0a;
-    --bg-subtle: #141414;
-    --text-primary: #fafafa;
-    --text-secondary: #a1a1aa;
-    --text-tertiary: #52525b;
-    --border-base: #1c1c1c;
-    --border-subtle: #121212;
-    --accent: #8b5cf6;
+/* Explicit Dark Mode override via class */
+.dark {
+  /* Core Palette - Luxury Dark */
+  --bg-main: #050505;
+  --bg-white: #0a0a0a;
+  --bg-subtle: #141414;
+  --text-primary: #fafafa;
+  --text-secondary: #a1a1aa;
+  --text-tertiary: #52525b;
+  --border-base: #1c1c1c;
+  --border-subtle: #121212;
+  --accent: #8b5cf6;
 
-    --background: var(--bg-main);
-    --foreground: var(--text-primary);
-  }
+  --background: var(--bg-main);
+  --foreground: var(--text-primary);
 }
 
 @theme {
