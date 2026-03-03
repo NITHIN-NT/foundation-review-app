@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import {
     CheckCircle, AlertCircle, XCircle,
     SkipForward, ExternalLink, ArrowRight, ArrowLeft, X,
-    PenTool, Eye, EyeOff
+    PenTool, Eye, EyeOff, Copy, Download
 } from 'lucide-react';
 import type { ScheduledReview, Question, ReviewStatus, QuestionResult } from '@/types';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -112,7 +112,30 @@ const ReviewSessionView: React.FC<SessionProps> = ({ review, questions, mode, on
     const isFullScreen = mode === 'fullscreen';
     const moduleQuestions = questions as Question[];
 
-    const getSaved = (key: string, def: unknown) => {
+    const getSaved = (key: string, def: any) => {
+        // Priority 1: Data from the review record (for completed/failed reviews)
+        if (review.session_data) {
+            const sd = review.session_data as any;
+            if (key === 'results' && sd.results) return sd.results;
+            if (key === 'currentIndex' && sd.currentIndex !== undefined) return sd.currentIndex;
+            if (key === 'seconds' && sd.seconds !== undefined) return sd.seconds;
+            if (key === 'practicalLink' && sd.practicalLink) return sd.practicalLink;
+            if (key === 'practicalLink2' && sd.practicalLink2) return sd.practicalLink2;
+            if (key === 'practicalLink3' && sd.practicalLink3) return sd.practicalLink3;
+            if (key === 'notes' && review.notes) return review.notes;
+            if (sd.individualMarks) {
+                if (key === 'practicalMark' && sd.individualMarks.practicalMark !== undefined) return sd.individualMarks.practicalMark;
+                if (key === 'practicalMark2' && sd.individualMarks.practicalMark2 !== undefined) return sd.individualMarks.practicalMark2;
+                if (key === 'practicalMark3' && sd.individualMarks.practicalMark3 !== undefined) return sd.individualMarks.practicalMark3;
+            }
+        }
+
+        // Fallback for single practical mark in record
+        if (key === 'practicalMark' && review.scores?.practical !== undefined && review.module !== 'Module 4') {
+            return review.scores.practical;
+        }
+
+        // Priority 2: Data from localStorage (for active sessions)
         try {
             const saved = localStorage.getItem(`review_session_${review.id}`);
             if (!saved) return def;
@@ -131,7 +154,7 @@ const ReviewSessionView: React.FC<SessionProps> = ({ review, questions, mode, on
     const [practicalLink3, setPracticalLink3] = useState<string>(getSaved('practicalLink3', ''));
     const [seconds, setSeconds] = useState<number>(getSaved('seconds', 0));
     const [notes, setNotes] = useState<string>(getSaved('notes', ''));
-    const [showResult, setShowResult] = useState(false);
+    const [showResult, setShowResult] = useState(review.status !== 'pending');
     const [isPaused] = useState<boolean>(getSaved('isPaused', false));
     const [showAnswer, setShowAnswer] = useState(false);
 
@@ -139,12 +162,13 @@ const ReviewSessionView: React.FC<SessionProps> = ({ review, questions, mode, on
     const currentResult = results.find(r => r.questionId === currentQuestion?.id);
 
     useEffect(() => {
-        if (isPaused) return;
+        if (isPaused || review.status !== 'pending') return;
         const timer = setInterval(() => setSeconds(s => s + 1), 1000);
         return () => clearInterval(timer);
-    }, [isPaused]);
+    }, [isPaused, review.status]);
 
     useEffect(() => {
+        if (review.status !== 'pending') return;
         const state = {
             currentIndex,
             results,
@@ -160,7 +184,7 @@ const ReviewSessionView: React.FC<SessionProps> = ({ review, questions, mode, on
             timestamp: Date.now()
         };
         localStorage.setItem(`review_session_${review.id}`, JSON.stringify(state));
-    }, [currentIndex, results, practicalMark, practicalMark2, practicalMark3, practicalLink, practicalLink2, practicalLink3, seconds, notes, isPaused, review.id]);
+    }, [currentIndex, results, practicalMark, practicalMark2, practicalMark3, practicalLink, practicalLink2, practicalLink3, seconds, notes, isPaused, review.id, review.status]);
 
     const stats = {
         theoretical: results.reduce((acc, curr) => acc + curr.score, 0),
@@ -178,6 +202,63 @@ const ReviewSessionView: React.FC<SessionProps> = ({ review, questions, mode, on
         const min = Math.floor(s / 60);
         const sec = s % 60;
         return `${min.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
+    };
+
+    const getReportText = () => {
+        const exemplary = results.filter(r => r.status === 'answered').length;
+        const improvement = results.filter(r => r.status === 'need-improvement').length;
+        const unsatisfactory = results.filter(r => r.status === 'wrong').length;
+        const skipped = results.filter(r => r.status === 'skip').length;
+        const pending = moduleQuestions.length - results.length;
+
+        return `
+ASSESSMENT REPORT
+=========================
+DATE: ${new Date().toLocaleDateString()}
+STATUS: ${isPassed ? 'PASSED' : 'FAILED'}
+STUDENT: ${review.studentName}
+MODULE: ${review.module}
+SCORE: ${totalScore.toFixed(0)}%
+TIME: ${formatTime(seconds)}
+
+THEORETICAL PERFORMANCE
+-------------------------
+Exemplary Answers: ${exemplary}
+Needs Improvement: ${improvement}
+Unsatisfactory: ${unsatisfactory}
+Skipped/Pending: ${skipped + pending}
+
+PRACTICAL SUBMISSIONS
+-------------------------
+Project 1: ${practicalLink || 'N/A'} (Mark: ${practicalMark}/10)
+${review.module === 'Module 4' ? `Project 2: ${practicalLink2 || 'N/A'} (Mark: ${practicalMark2}/10)\nProject 3: ${practicalLink3 || 'N/A'} (Mark: ${practicalMark3}/10)` : ''}
+
+MENTOR FEEDBACK
+-------------------------
+${notes || 'No feedback provided.'}
+
+=========================
+Generated by Foundation Assessment Hub
+        `.trim();
+    };
+
+    const handleCopyResult = () => {
+        navigator.clipboard.writeText(getReportText());
+        toast.success("Detailed report copied to clipboard!");
+    };
+
+    const handleDownloadResult = () => {
+        const text = getReportText();
+        const blob = new Blob([text], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `Assessment_${review.studentName.replace(/\s+/g, '_')}_${review.module.replace(/\s+/g, '_')}.txt`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        toast.success("Report downloaded successfully!");
     };
 
     const handleMark = (status: ReviewStatus) => {
@@ -246,12 +327,28 @@ const ReviewSessionView: React.FC<SessionProps> = ({ review, questions, mode, on
                         <div className="font-bold text-text-primary">{review.studentName}</div>
                     </div>
                 </div>
-                <button
-                    className="btn btn-primary h-14 mt-8 w-full shadow-lg"
-                    onClick={handleFinishSession}
-                >
-                    Close Session
-                </button>
+                <div className="flex flex-col gap-3 mt-8">
+                    <div className="grid grid-cols-2 gap-3">
+                        <button
+                            className="btn btn-secondary h-12 w-full shadow-sm flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-widest"
+                            onClick={handleCopyResult}
+                        >
+                            <Copy size={16} /> Copy
+                        </button>
+                        <button
+                            className="btn btn-secondary h-12 w-full shadow-sm flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-widest"
+                            onClick={handleDownloadResult}
+                        >
+                            <Download size={16} /> Download
+                        </button>
+                    </div>
+                    <button
+                        className="btn btn-primary h-14 w-full shadow-lg font-black uppercase tracking-widest text-xs"
+                        onClick={handleFinishSession}
+                    >
+                        Close Session
+                    </button>
+                </div>
             </div>
         );
     }
