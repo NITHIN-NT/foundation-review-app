@@ -22,9 +22,7 @@ import type { ScheduledReview } from '@/types';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/AuthProvider';
 import { cn } from '@/lib/utils';
-import Link from 'next/link';
-import { useAssessment, AssessmentSessionProvider } from '@/components/AssessmentSessionProvider';
-import { GlobalAssessmentLoader } from '@/components/GlobalAssessmentLoader';
+import { useAssessment } from '@/components/AssessmentSessionProvider';
 
 export default function Dashboard() {
   const { user, loading: authLoading } = useAuth();
