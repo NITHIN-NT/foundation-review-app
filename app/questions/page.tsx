@@ -184,7 +184,7 @@ export default function QuestionPoolPage() {
         return matchesSearch && matchesModule;
     });
 
-    const modules = [1, 2, 3, 4, 5, 6];
+    const modules = [1, 2, 3, 4];
 
     if (authLoading || (!user && isLoading)) {
         return (

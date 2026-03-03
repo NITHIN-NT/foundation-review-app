@@ -32,7 +32,6 @@ const Sidebar: React.FC<SidebarProps> = ({ isMobileOpen, onCloseMobile }) => {
 
     const navItems = [
         { icon: LayoutDashboard, label: 'Dashboard', href: '/' },
-        { icon: BookOpen, label: 'Reviews', href: '/reviews' },
         { icon: ClipboardList, label: 'Questions', href: '/questions' },
     ];
 
@@ -98,7 +97,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isMobileOpen, onCloseMobile }) => {
                         <nav className="space-y-1.5">
                             {navItems.map((item) => (
                                 <Link
-                                    key={item.href}
+                                    key={item.label}
                                     href={item.href}
                                     onClick={() => onCloseMobile?.()}
                                     className={cn(

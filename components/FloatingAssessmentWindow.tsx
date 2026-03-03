@@ -4,8 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
     CheckCircle, AlertCircle, XCircle,
     SkipForward, ExternalLink, ArrowRight, ArrowLeft, X,
-    Maximize2, Minimize2, GripHorizontal, PenTool,
-    Eye, EyeOff
+    PenTool, Eye, EyeOff
 } from 'lucide-react';
 import type { ScheduledReview, Question, ReviewStatus, QuestionResult } from '@/types';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -22,11 +21,10 @@ interface FloatingAssessmentWindowProps {
 }
 
 export const FloatingAssessmentWindow: React.FC<FloatingAssessmentWindowProps> = ({ review, isOpen, onClose, onComplete }) => {
-    const { mode, setMode } = useAssessment();
+    const { mode } = useAssessment();
     const [questions, setQuestions] = useState<Question[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [mounted, setMounted] = useState(false);
-    const constraintsRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         setMounted(true);
@@ -56,141 +54,34 @@ export const FloatingAssessmentWindow: React.FC<FloatingAssessmentWindowProps> =
         loadQuestions();
     }, [isOpen, review]);
 
-    const toggleFullscreen = async () => {
-        const nextMode = mode === 'fullscreen' ? 'floating' : 'fullscreen';
-        setMode(nextMode);
-
-        try {
-            if (nextMode === 'fullscreen') {
-                if (!document.fullscreenElement) {
-                    await document.documentElement.requestFullscreen();
-                }
-            } else {
-                if (document.fullscreenElement) {
-                    await document.exitFullscreen();
-                }
-            }
-        } catch (err) {
-            console.error("Fullscreen toggle failed:", err);
-        }
-    };
-
     if (!mounted || !isOpen || !review) return null;
-
-    const windowVariants = {
-        floating: {
-            opacity: 1,
-            scale: 1,
-            x: 0,
-            y: 0,
-            width: 600,
-            height: 800,
-            top: 'auto',
-            left: 'auto',
-            bottom: 32,
-            right: 32,
-            borderRadius: '3rem',
-            zIndex: 200,
-        },
-        mini: {
-            opacity: 1,
-            scale: 1,
-            x: 0,
-            y: 0,
-            width: 400,
-            height: 550,
-            top: 'auto',
-            left: 'auto',
-            bottom: 32,
-            right: 32,
-            borderRadius: '2rem',
-            zIndex: 200,
-        },
-        fullscreen: {
-            opacity: 1,
-            scale: 1,
-            x: 0,
-            y: 0,
-            width: '100vw',
-            height: '100vh',
-            top: 0,
-            left: 0,
-            bottom: 0,
-            right: 0,
-            borderRadius: 0,
-            zIndex: 9999,
-        }
-    };
 
     return (
         <>
-            {/* Constraint Container */}
-            <div ref={constraintsRef} className="fixed inset-0 pointer-events-none z-[199]" />
-
             <AnimatePresence mode="wait">
                 <motion.div
                     key="assessment-window-root"
-                    drag={mode !== 'fullscreen'}
-                    dragMomentum={false}
-                    dragElastic={0}
-                    dragConstraints={constraintsRef}
-                    variants={windowVariants}
-                    initial={false}
-                    animate={mode === 'fullscreen' ? { ...windowVariants.fullscreen, x: 0, y: 0 } : mode}
-                    transition={{ type: "spring", stiffness: 300, damping: 30 }}
-                    exit={{ opacity: 0, scale: 0.8, y: 200, transition: { duration: 0.2 } }}
-                    className={cn(
-                        "fixed bg-bg-main flex flex-col overflow-hidden transition-shadow duration-300",
-                        mode === 'fullscreen'
-                            ? "inset-0 border-none shadow-none z-[9999]"
-                            : "border border-white/20 shadow-[0_32px_64px_-12px_rgba(0,0,0,0.5)]"
-                    )}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.2 }}
+                    className="fixed inset-0 bg-bg-main flex flex-col overflow-hidden z-[9999]"
                 >
-                    {/* Drag Handle & Header */}
-                    <div className={cn(
-                        "h-14 bg-bg-white border-b border-border-base flex items-center justify-between px-6 shrink-0",
-                        mode !== 'fullscreen' ? "cursor-move" : "border-none"
-                    )}>
-                        <div className="flex items-center gap-3">
-                            {mode !== 'fullscreen' && <GripHorizontal className="text-text-tertiary" size={18} />}
-                            <span className="text-[10px] font-black uppercase tracking-widest text-text-tertiary">
-                                {mode === 'fullscreen' ? 'Pro Assessment Environment' : 'Assessment Session'}
-                            </span>
-                        </div>
-                        <div className="flex items-center gap-1">
-                            <button
-                                onClick={() => setMode(mode === 'mini' ? 'floating' : 'mini')}
-                                className={cn(
-                                    "p-2 rounded-xl text-text-tertiary transition-colors",
-                                    mode === 'mini' ? "bg-primary-subtle text-primary" : "hover:bg-bg-subtle"
-                                )}
-                                title="Mini Mode"
-                            >
-                                <Minimize2 size={16} />
-                            </button>
-                            <button
-                                onClick={toggleFullscreen}
-                                className={cn(
-                                    "p-2 rounded-xl text-text-tertiary transition-colors",
-                                    mode === 'fullscreen' ? "bg-primary-subtle text-primary" : "hover:bg-bg-subtle"
-                                )}
-                                title={mode === 'fullscreen' ? "Exit Fullscreen" : "Enter Fullscreen"}
-                            >
-                                {mode === 'fullscreen' ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
-                            </button>
-                            <button
-                                onClick={onClose}
-                                className="p-2 hover:bg-red-50 hover:text-red-500 rounded-xl text-text-tertiary transition-colors"
-                            >
-                                <X size={18} />
-                            </button>
-                        </div>
-                    </div>
-
                     <div className="flex-1 overflow-hidden relative">
                         {isLoading ? (
-                            <div className="flex items-center justify-center h-full">
-                                <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-primary"></div>
+                            <div className="flex flex-col h-full">
+                                <div className="h-16 bg-bg-white border-b border-border-base flex items-center justify-between px-8 shrink-0">
+                                    <div className="flex items-center gap-4">
+                                        <div className="w-10 h-10 rounded-xl bg-slate-900 animate-pulse" />
+                                        <div className="h-4 w-32 bg-bg-subtle animate-pulse rounded-md" />
+                                    </div>
+                                    <button onClick={onClose} className="text-text-tertiary hover:text-red-500">
+                                        <X size={20} />
+                                    </button>
+                                </div>
+                                <div className="flex-1 flex items-center justify-center">
+                                    <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-primary"></div>
+                                </div>
                             </div>
                         ) : (
                             <ReviewSessionView
@@ -198,11 +89,12 @@ export const FloatingAssessmentWindow: React.FC<FloatingAssessmentWindowProps> =
                                 questions={questions}
                                 mode={mode}
                                 onComplete={onComplete}
+                                onExit={onClose}
                             />
                         )}
                     </div>
-                </motion.div>
-            </AnimatePresence>
+                </motion.div >
+            </AnimatePresence >
         </>
     );
 };
@@ -212,9 +104,10 @@ interface SessionProps {
     questions: Question[];
     mode: WindowMode;
     onComplete: () => void;
+    onExit: () => void;
 }
 
-const ReviewSessionView: React.FC<SessionProps> = ({ review, questions, mode, onComplete }) => {
+const ReviewSessionView: React.FC<SessionProps> = ({ review, questions, mode, onComplete, onExit }) => {
     const isMini = mode === 'mini';
     const isFullScreen = mode === 'fullscreen';
     const moduleQuestions = questions as Question[];
@@ -231,7 +124,11 @@ const ReviewSessionView: React.FC<SessionProps> = ({ review, questions, mode, on
     const [currentIndex, setCurrentIndex] = useState(getSaved('currentIndex', 0));
     const [results, setResults] = useState<QuestionResult[]>(getSaved('results', []));
     const [practicalMark, setPracticalMark] = useState<number>(getSaved('practicalMark', 0));
+    const [practicalMark2, setPracticalMark2] = useState<number>(getSaved('practicalMark2', 0));
+    const [practicalMark3, setPracticalMark3] = useState<number>(getSaved('practicalMark3', 0));
     const [practicalLink, setPracticalLink] = useState<string>(getSaved('practicalLink', ''));
+    const [practicalLink2, setPracticalLink2] = useState<string>(getSaved('practicalLink2', ''));
+    const [practicalLink3, setPracticalLink3] = useState<string>(getSaved('practicalLink3', ''));
     const [seconds, setSeconds] = useState<number>(getSaved('seconds', 0));
     const [notes, setNotes] = useState<string>(getSaved('notes', ''));
     const [showResult, setShowResult] = useState(false);
@@ -252,20 +149,29 @@ const ReviewSessionView: React.FC<SessionProps> = ({ review, questions, mode, on
             currentIndex,
             results,
             practicalMark,
+            practicalMark2,
+            practicalMark3,
             practicalLink,
+            practicalLink2,
+            practicalLink3,
             seconds,
             notes,
             isPaused,
             timestamp: Date.now()
         };
         localStorage.setItem(`review_session_${review.id}`, JSON.stringify(state));
-    }, [currentIndex, results, practicalMark, practicalLink, seconds, notes, isPaused, review.id]);
+    }, [currentIndex, results, practicalMark, practicalMark2, practicalMark3, practicalLink, practicalLink2, practicalLink3, seconds, notes, isPaused, review.id]);
 
     const stats = {
         theoretical: results.reduce((acc, curr) => acc + curr.score, 0),
         maxTheoretical: moduleQuestions.length * 10
     };
-    const totalScore = (stats.maxTheoretical > 0 ? (stats.theoretical / stats.maxTheoretical) * 70 : 0) + ((practicalMark / 10) * 30);
+
+    const effectivePracticalMark = review.module === 'Module 4'
+        ? (practicalMark + practicalMark2 + practicalMark3) / 3
+        : practicalMark;
+
+    const totalScore = (stats.maxTheoretical > 0 ? (stats.theoretical / stats.maxTheoretical) * 70 : 0) + ((effectivePracticalMark / 10) * 30);
     const isPassed = totalScore >= 60;
 
     const formatTime = (s: number) => {
@@ -299,11 +205,19 @@ const ReviewSessionView: React.FC<SessionProps> = ({ review, questions, mode, on
             scores: {
                 theoretical: stats.theoretical,
                 maxTheoretical: stats.maxTheoretical,
-                practical: practicalMark,
+                practical: effectivePracticalMark,
                 total: totalScore
             },
             notes,
-            session_data: { results, currentIndex, seconds, practicalLink }
+            session_data: {
+                results,
+                currentIndex,
+                seconds,
+                practicalLink,
+                practicalLink2,
+                practicalLink3,
+                individualMarks: { practicalMark, practicalMark2, practicalMark3 }
+            }
         };
 
         const promise = updateReview(review.id, finalState as unknown as import('@/types').UpdateReviewRequest)
@@ -344,29 +258,45 @@ const ReviewSessionView: React.FC<SessionProps> = ({ review, questions, mode, on
 
     return (
         <div className="flex flex-col h-full bg-bg-subtle">
-            {/* Session Info Bar */}
-            <div className="px-6 py-4 bg-bg-white border-b border-border-base flex justify-between items-center shrink-0">
-                <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-lg bg-slate-900 flex items-center justify-center text-white font-black text-xs">
+            {/* Unified Session Header */}
+            <div className="h-16 bg-bg-white border-b border-border-base flex items-center justify-between px-6 shrink-0 z-10 shadow-sm">
+                <div className="flex items-center gap-4">
+                    <div className="w-10 h-10 rounded-xl bg-slate-900 flex items-center justify-center text-white font-black text-sm">
                         {review.studentName?.[0]}
                     </div>
-                    <div>
-                        <div className="text-xs font-bold text-text-primary leading-tight">{review.studentName}</div>
-                        <div className="text-[8px] font-black text-text-tertiary uppercase tracking-wider">{review.module}</div>
-                    </div>
-                </div>
-                <div className="flex items-center gap-4">
-                    <div className="text-right">
-                        <div className="text-[8px] font-black text-text-tertiary uppercase tracking-wider leading-none mb-1">TIME</div>
-                        <div className="font-mono text-sm font-bold text-text-primary leading-none">{formatTime(seconds)}</div>
-                    </div>
-                    <div className="w-px h-6 bg-border-base" />
-                    <div className="text-right">
-                        <div className="text-[8px] font-black text-text-tertiary uppercase tracking-wider leading-none mb-1">SCORE</div>
-                        <div className={cn("text-sm font-black leading-none", isPassed ? "text-green-600" : "text-amber-500")}>
-                            {totalScore.toFixed(0)}%
+                    <div className="hidden sm:block">
+                        <span className="text-[9px] font-black uppercase tracking-[0.2em] text-text-tertiary block leading-none mb-1">
+                            Active Session
+                        </span>
+                        <div className="flex items-center gap-2">
+                            <span className="text-sm font-bold text-text-primary">{review.studentName}</span>
+                            <span className="w-1 h-1 rounded-full bg-text-tertiary" />
+                            <span className="text-[10px] font-black text-text-tertiary uppercase">{review.module}</span>
                         </div>
                     </div>
+                </div>
+
+                <div className="flex items-center gap-6">
+                    <div className="flex items-center gap-6 bg-bg-subtle/50 px-6 py-2 rounded-2xl border border-border-subtle">
+                        <div className="flex flex-col items-end">
+                            <span className="text-[8px] font-black text-text-tertiary uppercase tracking-widest">Timer</span>
+                            <span className="font-mono text-sm font-bold text-text-primary">{formatTime(seconds)}</span>
+                        </div>
+                        <div className="w-px h-6 bg-border-subtle" />
+                        <div className="flex flex-col items-end">
+                            <span className="text-[8px] font-black text-text-tertiary uppercase tracking-widest">Score</span>
+                            <span className={cn("text-sm font-black", isPassed ? "text-green-600" : "text-amber-500")}>
+                                {totalScore.toFixed(0)}%
+                            </span>
+                        </div>
+                    </div>
+
+                    <button
+                        onClick={onExit}
+                        className="flex items-center gap-2 px-4 py-2 hover:bg-red-50 hover:text-red-500 rounded-xl text-text-tertiary transition-all font-black text-[10px] uppercase tracking-widest border border-transparent hover:border-red-100"
+                    >
+                        <X size={18} /> Exit
+                    </button>
                 </div>
             </div>
 
@@ -487,7 +417,9 @@ const ReviewSessionView: React.FC<SessionProps> = ({ review, questions, mode, on
                         )}>
                             <div className="space-y-6">
                                 <div className="space-y-4">
-                                    <label className="text-[10px] font-black uppercase text-text-tertiary tracking-widest">Practical Submission Link</label>
+                                    <label className="text-[10px] font-black uppercase text-text-tertiary tracking-widest">
+                                        {review.module === 'Module 4' ? 'Practical Submission Link 1' : 'Practical Submission Link'}
+                                    </label>
                                     <div className="relative">
                                         <input
                                             type="text"
@@ -502,7 +434,9 @@ const ReviewSessionView: React.FC<SessionProps> = ({ review, questions, mode, on
 
                                 <div className="space-y-4">
                                     <div className="flex justify-between items-center px-1">
-                                        <label className="text-[10px] font-black uppercase text-text-tertiary tracking-widest">Practical Mark</label>
+                                        <label className="text-[10px] font-black uppercase text-text-tertiary tracking-widest">
+                                            {review.module === 'Module 4' ? 'Project 1 Mark' : 'Practical Mark'}
+                                        </label>
                                         <span className="text-xl font-black text-primary">{practicalMark}/10</span>
                                     </div>
                                     <input
@@ -515,6 +449,74 @@ const ReviewSessionView: React.FC<SessionProps> = ({ review, questions, mode, on
                                         className="w-full h-2 bg-bg-white rounded-lg appearance-none cursor-pointer accent-primary border border-border-base shadow-inner"
                                     />
                                 </div>
+
+                                {review.module === 'Module 4' && (
+                                    <>
+                                        <div className="space-y-6 pt-4 border-t border-border-base/50">
+                                            <div className="space-y-4">
+                                                <label className="text-[10px] font-black uppercase text-text-tertiary tracking-widest">Practical Submission Link 2</label>
+                                                <div className="relative">
+                                                    <input
+                                                        type="text"
+                                                        className="h-14 w-full px-6 bg-bg-white rounded-2xl text-base font-bold shadow-inner outline-none border border-border-base focus:border-primary focus:ring-4 focus:ring-primary-subtle transition-all"
+                                                        placeholder="URL or technical feedback..."
+                                                        value={practicalLink2}
+                                                        onChange={e => setPracticalLink2(e.target.value)}
+                                                    />
+                                                    <ExternalLink size={16} className="absolute right-5 top-5 text-text-tertiary" />
+                                                </div>
+                                            </div>
+
+                                            <div className="space-y-4">
+                                                <div className="flex justify-between items-center px-1">
+                                                    <label className="text-[10px] font-black uppercase text-text-tertiary tracking-widest">Project 2 Mark</label>
+                                                    <span className="text-xl font-black text-primary">{practicalMark2}/10</span>
+                                                </div>
+                                                <input
+                                                    type="range"
+                                                    min="0"
+                                                    max="10"
+                                                    step="1"
+                                                    value={practicalMark2}
+                                                    onChange={e => setPracticalMark2(parseInt(e.target.value))}
+                                                    className="w-full h-2 bg-bg-white rounded-lg appearance-none cursor-pointer accent-primary border border-border-base shadow-inner"
+                                                />
+                                            </div>
+                                        </div>
+
+                                        <div className="space-y-6 pt-4 border-t border-border-base/50">
+                                            <div className="space-y-4">
+                                                <label className="text-[10px] font-black uppercase text-text-tertiary tracking-widest">Practical Submission Link 3</label>
+                                                <div className="relative">
+                                                    <input
+                                                        type="text"
+                                                        className="h-14 w-full px-6 bg-bg-white rounded-2xl text-base font-bold shadow-inner outline-none border border-border-base focus:border-primary focus:ring-4 focus:ring-primary-subtle transition-all"
+                                                        placeholder="URL or technical feedback..."
+                                                        value={practicalLink3}
+                                                        onChange={e => setPracticalLink3(e.target.value)}
+                                                    />
+                                                    <ExternalLink size={16} className="absolute right-5 top-5 text-text-tertiary" />
+                                                </div>
+                                            </div>
+
+                                            <div className="space-y-4">
+                                                <div className="flex justify-between items-center px-1">
+                                                    <label className="text-[10px] font-black uppercase text-text-tertiary tracking-widest">Project 3 Mark</label>
+                                                    <span className="text-xl font-black text-primary">{practicalMark3}/10</span>
+                                                </div>
+                                                <input
+                                                    type="range"
+                                                    min="0"
+                                                    max="10"
+                                                    step="1"
+                                                    value={practicalMark3}
+                                                    onChange={e => setPracticalMark3(parseInt(e.target.value))}
+                                                    className="w-full h-2 bg-bg-white rounded-lg appearance-none cursor-pointer accent-primary border border-border-base shadow-inner"
+                                                />
+                                            </div>
+                                        </div>
+                                    </>
+                                )}
                             </div>
 
                             <div className="space-y-4">
@@ -537,7 +539,7 @@ const ReviewSessionView: React.FC<SessionProps> = ({ review, questions, mode, on
                     className="btn btn-primary h-14 w-full shadow-lg shadow-primary/20 font-black"
                     onClick={() => {
                         if (!practicalLink && !isMini) {
-                            toast.error("Please provide a Practical Submission Link");
+                            toast.error(`Please provide ${review.module === 'Module 4' ? 'at least one' : 'the'} Practical Submission Link`);
                             return;
                         }
                         setShowResult(true);

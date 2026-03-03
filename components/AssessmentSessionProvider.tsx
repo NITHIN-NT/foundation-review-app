@@ -27,7 +27,7 @@ interface PersistedState {
 export const AssessmentSessionProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [selectedReview, setSelectedReview] = useState<ScheduledReview | null>(null);
-    const [mode, setMode] = useState<WindowMode>('floating');
+    const [mode, setMode] = useState<WindowMode>('fullscreen');
     const [isInitialized, setIsInitialized] = useState(false);
     const isClosingRef = useRef(false);
 

@@ -6,6 +6,7 @@ import { AuthProvider } from "@/components/AuthProvider";
 import LayoutWrapper from "@/components/LayoutWrapper";
 import { AssessmentSessionProvider } from "@/components/AssessmentSessionProvider";
 import { GlobalAssessmentLoader } from "@/components/GlobalAssessmentLoader";
+import { cn } from "@/lib/utils";
 
 const jakarta = Plus_Jakarta_Sans({
   subsets: ["latin"],
@@ -28,7 +29,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${jakarta.variable} ${jetbrains.variable}`}>
+    <html lang="en" className={cn("dark", jakarta.variable, jetbrains.variable)}>
       <body className="antialiased bg-bg-main text-text-primary">
         <AuthProvider>
           <AssessmentSessionProvider>

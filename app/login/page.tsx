@@ -4,35 +4,42 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
-import { ShieldCheck, Loader2, Lock } from 'lucide-react';
+import { ShieldCheck, Loader2, Lock, ArrowRight } from 'lucide-react';
 import { REQUIRED_PIN } from '@/lib/constants';
 import { useAuth } from '@/components/AuthProvider';
 
 export default function LoginPage() {
-    const { loginViaPin } = useAuth();
+    const { user, loading: authLoading, loginViaPin } = useAuth();
     const [pin, setPin] = useState(['', '', '', '', '', '']);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState(false);
     const router = useRouter();
     const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
-    // Check if already authenticated
+    // Check if already authenticated using the central AuthProvider
     useEffect(() => {
-        const isVerified = localStorage.getItem('auth_pin_verified') === 'true';
-        if (isVerified) {
+        if (!authLoading && user) {
             router.push('/');
         }
-    }, [router]);
+    }, [user, authLoading, router]);
 
     const handleVerify = useCallback(async () => {
         const enteredPin = pin.join('');
+        if (enteredPin.length < 6) return;
+
+        setIsLoading(true);
+        setError(false);
+
+        // Artificial delay for premium feel
+        await new Promise(resolve => setTimeout(resolve, 600));
+
         if (enteredPin === REQUIRED_PIN) {
-            setIsLoading(true);
-            setError(false);
             try {
                 // PIN gate success - trigger local session
                 loginViaPin();
-                toast.success('Access Granted');
+                toast.success('Security Clearance Granted', {
+                    description: 'Welcome back to Foundation Control'
+                });
                 router.push('/');
             } catch (error) {
                 console.error('Session Error:', error);
@@ -44,16 +51,13 @@ export default function LoginPage() {
             setError(true);
             setPin(['', '', '', '', '', '']);
             inputRefs.current[0]?.focus();
-            toast.error('Invalid Protocol Key');
+            toast.error('Invalid Security Key', {
+                description: 'The protocol key you entered is incorrect.'
+            });
             setTimeout(() => setError(false), 500);
+            setIsLoading(false);
         }
     }, [pin, router, loginViaPin]);
-
-    useEffect(() => {
-        if (pin.every(digit => digit !== '')) {
-            handleVerify();
-        }
-    }, [pin, handleVerify]);
 
     const handleChange = (index: number, value: string) => {
         if (isNaN(Number(value))) return;
@@ -105,22 +109,36 @@ export default function LoginPage() {
                     <h1 className="text-3xl font-black tracking-tight text-white mb-2">Welcome Back</h1>
                     <p className="text-white/40 text-xs font-bold uppercase tracking-[0.2em] mb-12">Enter your security PIN to continue</p>
 
-                    <div className="flex justify-center gap-3 mb-10">
-                        {pin.map((digit, index) => (
-                            <input
-                                key={index}
-                                ref={el => { inputRefs.current[index] = el; }}
-                                type="text"
-                                inputMode="numeric"
-                                maxLength={1}
-                                value={digit}
-                                onChange={(e) => handleChange(index, e.target.value)}
-                                onKeyDown={(e) => handleKeyDown(index, e)}
-                                className={`w-12 h-16 md:w-16 md:h-20 bg-white/5 border ${error ? 'border-red-500/50' : 'border-white/10'} rounded-2xl text-center text-2xl font-black text-white outline-none focus:bg-white/10 focus:border-primary/50 transition-all shadow-lg`}
-                                disabled={isLoading}
-                            />
-                        ))}
-                    </div>
+                    <form onSubmit={(e) => { e.preventDefault(); handleVerify(); }}>
+                        <div className="flex justify-center gap-3 mb-10">
+                            {pin.map((digit, index) => (
+                                <input
+                                    key={index}
+                                    ref={el => { inputRefs.current[index] = el; }}
+                                    type="text"
+                                    inputMode="numeric"
+                                    maxLength={1}
+                                    value={digit}
+                                    onChange={(e) => handleChange(index, e.target.value)}
+                                    onKeyDown={(e) => handleKeyDown(index, e)}
+                                    className={`w-12 h-16 md:w-16 md:h-20 bg-white/5 border ${error ? 'border-red-500/50' : 'border-white/10'} rounded-2xl text-center text-2xl font-black text-white outline-none focus:bg-white/10 focus:border-primary/50 transition-all shadow-lg`}
+                                    disabled={isLoading}
+                                />
+                            ))}
+                        </div>
+
+                        <button
+                            type="submit"
+                            disabled={isLoading || pin.some(d => d === '')}
+                            className="btn btn-primary w-full h-14 rounded-2xl font-black uppercase tracking-widest text-xs shadow-xl shadow-primary/20 disabled:opacity-50 disabled:shadow-none transition-all mb-8"
+                        >
+                            {isLoading ? (
+                                <Loader2 className="animate-spin" size={18} />
+                            ) : (
+                                <>Verify Security Key <ArrowRight size={18} /></>
+                            )}
+                        </button>
+                    </form>
 
                     <p className="text-white/20 text-[10px] font-black uppercase tracking-[0.3em] h-4">
                         {isLoading ? 'Verifying PIN...' : error ? 'Access Denied: Incorrect PIN' : 'Enter your 6-digit PIN'}
